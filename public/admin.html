@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="he" dir="rtl" class="admin">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#6d3a4e">
+<title>מערכת הניהול - לולה פדיקור</title>
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body style="background:#f7f5f6">
+
+<!-- מסך התחברות -->
+<section id="loginScreen" class="page" style="max-width:420px;padding-top:48px">
+  <div class="card">
+    <h2 class="center">מערכת הניהול</h2>
+    <p class="hint center">הגישה מיועדת ללולה ולאבי בלבד.</p>
+    <form id="loginForm">
+      <div class="field">
+        <label for="username">שם משתמש</label>
+        <input type="text" id="username" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="password">סיסמה</label>
+        <input type="password" id="password" autocomplete="current-password" required>
+      </div>
+      <div id="loginError" class="alert error hidden"></div>
+      <button class="btn btn-lg btn-block" type="submit">כניסה</button>
+    </form>
+  </div>
+  <p class="center"><a href="/">חזרה לעמוד קביעת התורים</a></p>
+</section>
+
+<!-- מערכת הניהול -->
+<div id="adminApp" class="hidden">
+  <header class="admin-bar">
+    <strong>לולה פדיקור · ניהול</strong>
+    <div>
+      <span class="who" id="whoami"></span>
+      <button class="btn btn-sm btn-ghost" id="btnLogout" style="color:#fff;border-color:rgba(255,255,255,.4)">יציאה</button>
+    </div>
+  </header>
+
+  <div class="page" style="max-width:1100px">
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-panel="calendar">יומן</button>
+      <button class="tab" data-panel="appointments">תורים</button>
+      <button class="tab" data-panel="services">טיפולים</button>
+      <button class="tab" data-panel="hours">שעות פעילות</button>
+      <button class="tab" data-panel="blocks">חסימות וחופשות</button>
+      <button class="tab" data-panel="customers">לקוחות</button>
+      <button class="tab" data-panel="waitlist">רשימת המתנה</button>
+      <button class="tab" data-panel="settings">הגדרות</button>
+    </nav>
+
+    <!-- יומן -->
+    <section class="panel active" id="panel-calendar">
+      <div class="card">
+        <div class="row-between">
+          <h2 style="margin:0">יומן</h2>
+          <div class="btn-row">
+            <button class="btn btn-sm" id="btnNewAppt">הוספת תור</button>
+            <button class="btn btn-sm btn-ghost" id="btnToday">היום</button>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn btn-sm btn-ghost view-btn active" data-view="day">יומי</button>
+          <button class="btn btn-sm btn-ghost view-btn" data-view="week">שבועי</button>
+          <button class="btn btn-sm btn-ghost view-btn" data-view="month">חודשי</button>
+        </div>
+      </div>
+      <div id="calendarView"><div class="spinner"></div></div>
+    </section>
+
+    <!-- תורים -->
+    <section class="panel" id="panel-appointments">
+      <div class="card">
+        <h2 style="margin-top:0">רשימת תורים</h2>
+        <div class="grid-2">
+          <div class="field"><label for="fltFrom">מתאריך</label><input type="date" id="fltFrom"></div>
+          <div class="field"><label for="fltTo">עד תאריך</label><input type="date" id="fltTo"></div>
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="fltStatus">סטטוס</label>
+            <select id="fltStatus">
+              <option value="active">פעילים (ממתין/מאושר)</option>
+              <option value="all">הכל</option>
+              <option value="pending">ממתין לאישור</option>
+              <option value="confirmed">מאושר</option>
+              <option value="completed">הושלם</option>
+              <option value="cancelled">מבוטלים</option>
+              <option value="no_show">לא הגיעה</option>
+            </select>
+          </div>
+          <div class="field"><label for="fltQ">חיפוש (שם / טלפון / טיפול)</label><input type="text" id="fltQ"></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-sm" id="btnFilter">הצגה</button>
+          <a class="btn btn-sm btn-ghost" id="btnExport" href="#">יצוא ל-CSV</a>
+        </div>
+      </div>
+      <div id="apptList"></div>
+    </section>
+
+    <!-- טיפולים -->
+    <section class="panel" id="panel-services">
+      <div class="card row-between">
+        <h2 style="margin:0">ניהול טיפולים</h2>
+        <button class="btn btn-sm" id="btnNewService">טיפול חדש</button>
+      </div>
+      <div id="servicesList"></div>
+    </section>
+
+    <!-- שעות פעילות -->
+    <section class="panel" id="panel-hours">
+      <div class="card">
+        <h2 style="margin-top:0">שעות פעילות קבועות</h2>
+        <p class="hint">ניתן להגדיר לכל יום שעות שונות, וכן מספר טווחים ביום כדי ליצור הפסקה.</p>
+        <div id="hoursEditor"></div>
+        <button class="btn btn-block" id="btnSaveHours">שמירת שעות הפעילות</button>
+      </div>
+    </section>
+
+    <!-- חסימות -->
+    <section class="panel" id="panel-blocks">
+      <div class="card">
+        <h2 style="margin-top:0">חסימת שעות, ימים וחופשות</h2>
+        <div class="grid-2">
+          <div class="field">
+            <label for="excType">סוג</label>
+            <select id="excType">
+              <option value="block">חסימה (יום או שעות)</option>
+              <option value="vacation">חופשה (טווח תאריכים)</option>
+              <option value="open">פתיחת שעות נוספות</option>
+            </select>
+          </div>
+          <div class="field"><label for="excDate">תאריך</label><input type="date" id="excDate"></div>
+        </div>
+        <div class="grid-2">
+          <div class="field"><label for="excEndDate">עד תאריך (לחופשה)</label><input type="date" id="excEndDate"></div>
+          <div class="field"><label for="excReason">סיבה / הערה</label><input type="text" id="excReason" maxlength="120"></div>
+        </div>
+        <div class="grid-2">
+          <div class="field"><label for="excStart">משעה (ריק = כל היום)</label><input type="time" id="excStart"></div>
+          <div class="field"><label for="excEnd">עד שעה</label><input type="time" id="excEnd"></div>
+        </div>
+        <label class="checkbox"><input type="checkbox" id="excRecurring"><span>חוזר כל שבוע באותו יום (למשל הפסקת צהריים קבועה)</span></label>
+        <div id="excError" class="alert error hidden"></div>
+        <button class="btn btn-block" id="btnAddException">הוספה</button>
+      </div>
+      <div id="blocksList"></div>
+    </section>
+
+    <!-- לקוחות -->
+    <section class="panel" id="panel-customers">
+      <div class="card">
+        <div class="row-between">
+          <h2 style="margin:0">לקוחות</h2>
+          <a class="btn btn-sm btn-ghost" href="/api/admin/export/customers.csv">יצוא ל-CSV</a>
+        </div>
+        <div class="field" style="margin-top:10px"><input type="text" id="custSearch" placeholder="חיפוש לפי שם או טלפון"></div>
+      </div>
+      <div id="customersList"></div>
+    </section>
+
+    <!-- רשימת המתנה -->
+    <section class="panel" id="panel-waitlist">
+      <div class="card"><h2 style="margin:0">רשימת המתנה</h2></div>
+      <div id="waitlistList"></div>
+    </section>
+
+    <!-- הגדרות -->
+    <section class="panel" id="panel-settings">
+      <div class="card">
+        <h2 style="margin-top:0">הגדרות המערכת</h2>
+        <div id="settingsForm"></div>
+        <button class="btn btn-block" id="btnSaveSettings">שמירת ההגדרות</button>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">החלפת סיסמה</h3>
+        <div class="field"><label for="curPass">סיסמה נוכחית</label><input type="password" id="curPass" autocomplete="current-password"></div>
+        <div class="field"><label for="newPass">סיסמה חדשה (8 תווים לפחות)</label><input type="password" id="newPass" autocomplete="new-password"></div>
+        <button class="btn btn-ghost btn-block" id="btnChangePass">עדכון סיסמה</button>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">משתמשי ניהול</h3>
+        <div id="adminsList"></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">תיעוד פעולות ניהול</h3>
+        <div id="auditList"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div id="modalRoot"></div>
+<script src="/js/common.js"></script>
+<script src="/js/admin.js"></script>
+</body>
+</html>

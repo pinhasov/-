@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#6d3a4e">
+<title>ניהול התור שלי - לולה</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <p class="brand" id="brandName">לולה פדיקור</p>
+  <h1>התור שלי</h1>
+</header>
+
+<main class="page">
+  <div id="loading" class="loading"><div class="spinner"></div>טוענת את פרטי התור...</div>
+  <div id="error" class="alert error hidden"></div>
+
+  <section id="content" class="hidden">
+    <div class="card">
+      <div class="row-between">
+        <h2 style="margin:0">פרטי התור</h2>
+        <span class="pill" id="statusPill"></span>
+      </div>
+      <ul class="summary" id="details"></ul>
+    </div>
+
+    <div class="card" id="calendarCard">
+      <h3>הוספה ליומן</h3>
+      <div class="btn-row">
+        <a class="btn btn-ghost btn-sm" id="icsLink" download>יומן הטלפון (ICS)</a>
+        <a class="btn btn-ghost btn-sm" id="googleLink" target="_blank" rel="noopener">Google</a>
+        <a class="btn btn-ghost btn-sm" id="outlookLink" target="_blank" rel="noopener">Outlook</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>מדיניות ביטולים</h3>
+      <div class="policy-box" id="policyBox"></div>
+    </div>
+
+    <div id="actions" class="card">
+      <h3>שינוי או ביטול התור</h3>
+      <div id="modifyBlocked" class="alert warn hidden"></div>
+      <div class="btn-row" id="actionButtons">
+        <button class="btn btn-ghost" id="btnReschedule">בקשת שינוי מועד</button>
+        <button class="btn btn-danger" id="btnCancel">ביטול התור</button>
+      </div>
+    </div>
+
+    <section id="rescheduleArea" class="hidden">
+      <h2 class="section-title">בחירת מועד חדש</h2>
+      <div class="calendar" id="calendar"><div class="spinner"></div></div>
+      <div id="slotsArea" class="hidden">
+        <h2 class="section-title" id="slotsTitle">בחירת שעה</h2>
+        <div id="slotsBox"></div>
+      </div>
+      <p class="center"><button class="btn btn-ghost btn-sm" id="btnCancelReschedule">ביטול השינוי</button></p>
+    </section>
+
+    <p class="center"><a class="btn btn-ghost btn-sm" href="/">לקביעת תור נוסף</a></p>
+  </section>
+</main>
+
+<div id="modalRoot"></div>
+<script src="/js/common.js"></script>
+<script src="/js/manage.js"></script>
+</body>
+</html>

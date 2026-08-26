@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="קביעת תור אונליין אצל לולה – פדיקור, מניקור, לק ג'ל וטיפולי יופי.">
+<meta name="theme-color" content="#6d3a4e">
+<meta name="format-detection" content="telephone=no">
+<title>קביעת תור אצל לולה</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="תור אצל לולה">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <img id="logo" class="logo hidden" alt="">
+  <p class="brand" id="brandName">לולה פדיקור</p>
+  <h1 id="pageTitle">קביעת תור אצל לולה</h1>
+  <p id="introText">ברוכה הבאה למערכת קביעת התורים של לולה. בחרי את הטיפול הרצוי, את היום המתאים לך ואת אחת השעות הפנויות.</p>
+</header>
+
+<main class="page">
+
+  <ol class="steps hidden" id="steps">
+    <li data-num="1" data-step="service">טיפול</li>
+    <li data-num="2" data-step="date">יום</li>
+    <li data-num="3" data-step="time">שעה</li>
+    <li data-num="4" data-step="details">פרטים</li>
+    <li data-num="5" data-step="confirm">אישור</li>
+  </ol>
+
+  <!-- מסך פתיחה -->
+  <section id="screen-welcome" class="screen">
+    <div class="card center">
+      <h2>נעים להכיר 💅</h2>
+      <p class="hint">קביעת תור פשוטה ומהירה, בכל שעה ומכל מכשיר.</p>
+      <div class="stack">
+        <button class="btn btn-lg btn-block" id="btnStart">לקביעת תור</button>
+        <button class="btn btn-ghost btn-block" id="btnMine">התורים שלי</button>
+      </div>
+    </div>
+    <div class="card" id="contactCard">
+      <h3>יצירת קשר</h3>
+      <p class="hint" id="contactLines"></p>
+      <div class="btn-row">
+        <a class="btn btn-ghost hidden" id="waLink" target="_blank" rel="noopener">שליחת הודעה בוואטסאפ</a>
+        <a class="btn btn-ghost hidden" id="telLink">חיוג ללולה</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- בחירת טיפול -->
+  <section id="screen-service" class="screen hidden">
+    <h2 class="section-title">איזה טיפול תרצי?</h2>
+    <div class="service-list" id="serviceList"><div class="spinner"></div></div>
+    <p class="center"><button class="btn btn-ghost btn-sm" data-back="welcome">חזרה</button></p>
+  </section>
+
+  <!-- בחירת יום ושעה -->
+  <section id="screen-date" class="screen hidden">
+    <div class="card" id="chosenServiceBox"></div>
+    <h2 class="section-title">בחירת יום</h2>
+    <p class="hint">ניתן לעבור בין החודשים ולבחור כל יום פנוי ביומן.</p>
+    <div class="calendar" id="calendar"><div class="spinner"></div></div>
+    <div class="cal-legend">
+      <span><i class="swatch available"></i> יש שעות פנויות</span>
+      <span><i class="swatch full"></i> תפוס</span>
+      <span><i class="swatch closed"></i> סגור</span>
+    </div>
+
+    <div id="slotsArea" class="hidden">
+      <h2 class="section-title" id="slotsTitle">בחירת שעה</h2>
+      <p class="hint" id="slotsHint"></p>
+      <div id="slotsBox"></div>
+    </div>
+    <p class="center"><button class="btn btn-ghost btn-sm" data-back="service">חזרה לבחירת טיפול</button></p>
+  </section>
+
+  <!-- פרטי הלקוחה -->
+  <section id="screen-details" class="screen hidden">
+    <h2 class="section-title">הפרטים שלך</h2>
+    <div class="card">
+      <form id="detailsForm" novalidate>
+        <div class="field">
+          <label for="fullName">שם מלא <span class="req">*</span></label>
+          <input type="text" id="fullName" name="fullName" autocomplete="name" required maxlength="80" placeholder="שם פרטי ושם משפחה">
+        </div>
+        <div class="field">
+          <label for="phone">טלפון נייד <span class="req">*</span></label>
+          <input type="tel" id="phone" name="phone" autocomplete="tel" inputmode="tel" required placeholder="050-1234567">
+        </div>
+        <div class="field">
+          <label for="email">דואר אלקטרוני (לא חובה)</label>
+          <input type="email" id="email" name="email" autocomplete="email" placeholder="name@example.com">
+        </div>
+        <div class="field">
+          <label for="note">הערה או בקשה מיוחדת (לא חובה)</label>
+          <textarea id="note" name="note" maxlength="1000" placeholder="כל דבר שחשוב שלולה תדע מראש"></textarea>
+        </div>
+        <div class="field">
+          <label for="sensitivities">רגישויות או מידע רלוונטי לטיפול (לא חובה)</label>
+          <input type="text" id="sensitivities" name="sensitivities" maxlength="300">
+        </div>
+        <label class="checkbox">
+          <input type="checkbox" id="firstVisit">
+          <span>זו הפעם הראשונה שלי אצל לולה</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="acceptTerms" required>
+          <span>קראתי ואני מאשרת את <a href="#" id="termsLink">תנאי השימוש ומדיניות הביטולים</a> <span class="req">*</span></span>
+        </label>
+        <div id="detailsError" class="alert error hidden"></div>
+        <button type="submit" class="btn btn-lg btn-block">המשך לאישור התור</button>
+      </form>
+    </div>
+    <p class="center"><button class="btn btn-ghost btn-sm" data-back="date">חזרה לבחירת שעה</button></p>
+  </section>
+
+  <!-- מסך סיכום ואישור -->
+  <section id="screen-confirm" class="screen hidden">
+    <h2 class="section-title">סיכום התור</h2>
+    <div class="card">
+      <ul class="summary" id="summaryList"></ul>
+    </div>
+    <div class="card">
+      <h3>מדיניות ביטולים</h3>
+      <div class="policy-box" id="policyBox"></div>
+    </div>
+    <div id="confirmError" class="alert error hidden"></div>
+    <button class="btn btn-lg btn-block" id="btnConfirm">אישור וקביעת התור</button>
+    <p class="center"><button class="btn btn-ghost btn-sm" data-back="details">חזרה לעריכת הפרטים</button></p>
+  </section>
+
+  <!-- מסך הצלחה -->
+  <section id="screen-success" class="screen hidden">
+    <div class="card success-hero">
+      <div class="mark">✓</div>
+      <h2>התור נקבע בהצלחה</h2>
+      <p id="successText"></p>
+      <div id="pendingNote" class="alert warn hidden">התור ממתין לאישור של לולה. נעדכן אותך בהקדם.</div>
+    </div>
+    <div class="card">
+      <h3>הוספת התור ליומן שלי</h3>
+      <p class="hint">התזכורת תגיע מהיומן שבטלפון שלך.</p>
+      <div class="btn-row">
+        <a class="btn" id="icsLink" download>הוספה ליומן הטלפון (ICS)</a>
+        <a class="btn btn-ghost" id="googleLink" target="_blank" rel="noopener">Google Calendar</a>
+        <a class="btn btn-ghost" id="outlookLink" target="_blank" rel="noopener">Outlook</a>
+      </div>
+    </div>
+    <div class="card">
+      <h3>שינוי או ביטול</h3>
+      <p class="hint">הקישור האישי שלך לניהול התור:</p>
+      <p><a id="manageLink" href="#"></a></p>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="btnCopyLink">העתקת הקישור</button>
+        <a class="btn btn-ghost" id="btnGoManage" href="#">לניהול התור</a>
+      </div>
+    </div>
+    <button class="btn btn-ghost btn-block" id="btnNewBooking">קביעת תור נוסף</button>
+  </section>
+
+  <!-- התורים שלי -->
+  <section id="screen-my" class="screen hidden">
+    <h2 class="section-title">התורים שלי</h2>
+    <p class="hint">מוצגים התורים שנקבעו מהמכשיר הזה. לניהול תור שנקבע במכשיר אחר יש להשתמש בקישור האישי שהתקבל.</p>
+    <div id="myList"></div>
+    <p class="center"><button class="btn btn-ghost btn-sm" data-back="welcome">חזרה</button></p>
+  </section>
+
+  <footer class="footer">
+    <div id="footerContact"></div>
+    <a href="#" id="privacyLink">מדיניות פרטיות ותנאי שימוש</a>
+  </footer>
+</main>
+
+<div id="modalRoot"></div>
+
+<script src="/js/common.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
