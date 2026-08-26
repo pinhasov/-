@@ -9,6 +9,14 @@
 
   const state = { data: null, config: null, calYear: null, calMonth: null, date: null };
 
+  /** מזהי הטיפולים של התור, לצורך חישוב זמינות במועד חדש */
+  function serviceIds() {
+    const a = state.data?.appointment;
+    if (!a) return '';
+    if (a.serviceIds && a.serviceIds.length) return a.serviceIds.join(',');
+    return a.serviceId ? String(a.serviceId) : '';
+  }
+
   async function load() {
     try {
       state.config = await api('/api/config');
@@ -36,15 +44,16 @@
 
     const list = $('details');
     clear(list);
+    const multi = (a.services || []).length > 1;
     const rows = [
-      ['הטיפול', a.service],
+      [multi ? 'הטיפולים' : 'הטיפול', a.service],
       ['תאריך', `${a.dateIL} (יום ${a.dayName})`],
       ['שעה', `${a.startTime} - ${a.endTime}`],
       ['משך', duration(a.durationMin)],
-      ['מחיר', a.price ? money(a.price) : 'ייקבע במקום'],
       ['שם', a.customerName || ''],
       ['טלפון', a.customerPhone || ''],
     ];
+    if (a.price) rows.splice(4, 0, ['מחיר', money(a.price)]);
     if (a.note) rows.push(['הערה', a.note]);
     for (const [k, v] of rows) {
       list.appendChild(el('li', {}, [el('span', { class: 'k', text: k }), el('span', { class: 'v', text: v })]));
@@ -99,14 +108,14 @@
     const box = $('calendar');
     clear(box);
     box.appendChild(el('div', { class: 'spinner' }));
-    const a = state.data.appointment;
-    if (!a.serviceId) {
+    const ids = serviceIds();
+    if (!ids) {
       clear(box);
       box.appendChild(el('div', { class: 'alert info', text: 'לשינוי מועד התור יש ליצור קשר עם לולה.' }));
       return;
     }
     try {
-      const data = await api(`/api/calendar?service_id=${a.serviceId}&year=${state.calYear}&month=${state.calMonth}`);
+      const data = await api(`/api/calendar?service_ids=${ids}&year=${state.calYear}&month=${state.calMonth}`);
       renderCalendar(data);
     } catch (e) {
       clear(box);
@@ -158,7 +167,7 @@
     clear(box);
     box.appendChild(el('div', { class: 'spinner' }));
     try {
-      const data = await api(`/api/slots?service_id=${state.data.appointment.serviceId}&date=${date}`);
+      const data = await api(`/api/slots?service_ids=${serviceIds()}&date=${date}`);
       $('slotsTitle').textContent = `שעות פנויות ליום ${data.dayName}, ${data.dateIL}`;
       clear(box);
       const visible = data.slots.filter((s) => s.status !== 'past');

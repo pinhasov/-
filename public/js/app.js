@@ -5,8 +5,8 @@
 
   const state = {
     config: null,
-    services: [],
-    service: null,
+    services: [],       // כל הטיפולים הזמינים
+    selected: [],       // הטיפולים שהלקוחה בחרה (אחד או יותר)
     date: null,
     time: null,
     slotEnd: null,
@@ -62,6 +62,10 @@
 
   // ---------- טיפולים ----------
   async function loadServices() {
+    const max = state.config.maxServicesPerBooking || 4;
+    $('serviceHint').textContent = max > 1
+      ? `ניתן לבחור יותר מטיפול אחד (עד ${max}) – המערכת תשריין זמן לכולם יחד.`
+      : 'יש לבחור טיפול אחד.';
     const box = $('serviceList');
     clear(box);
     box.appendChild(el('div', { class: 'spinner' }));
@@ -73,7 +77,12 @@
         box.appendChild(el('div', { class: 'alert info', text: 'בשלב זה אין טיפולים פתוחים להזמנה. ניתן ליצור קשר עם לולה.' }));
         return;
       }
+      // שמירה על הבחירה הקיימת גם לאחר רענון הרשימה
+      state.selected = state.selected
+        .map((sel) => data.services.find((s) => s.id === sel.id))
+        .filter(Boolean);
       for (const s of data.services) box.appendChild(serviceCard(s));
+      refreshSelectionUI();
     } catch (e) {
       clear(box);
       box.appendChild(el('div', { class: 'alert error', text: e.message }));
@@ -81,15 +90,18 @@
   }
 
   function serviceCard(s) {
+    const selected = isSelected(s);
     const meta = el('div', { class: 'meta' }, [
       el('span', { class: 'pill', text: duration(s.durationMin) }),
-      s.price ? el('span', { class: 'pill gold', text: money(s.price) }) : null,
+      state.config.showPrices && s.price ? el('span', { class: 'pill gold', text: money(s.price) }) : null,
       s.requiresApproval ? el('span', { class: 'pill gray', text: 'דורש אישור' }) : null,
       s.depositRequired ? el('span', { class: 'pill gray', text: 'נדרשת מקדמה' }) : null,
     ]);
     return el('button', {
-      class: 'service', type: 'button',
-      onclick: () => chooseService(s),
+      class: 'service' + (selected ? ' selected' : ''), type: 'button',
+      'aria-pressed': selected ? 'true' : 'false',
+      dataset: { serviceId: String(s.id) },
+      onclick: () => toggleService(s),
     }, [
       s.imageUrl ? el('img', { src: s.imageUrl, alt: s.name, loading: 'lazy' }) : el('div', { class: 'thumb', text: '💅' }),
       el('div', { class: 'info' }, [
@@ -97,14 +109,56 @@
         s.description ? el('div', { class: 'desc', text: s.description }) : null,
         meta,
       ]),
-      el('span', { class: 'pill', text: 'בחירה' }),
+      el('span', { class: 'check', text: '✓', 'aria-hidden': 'true' }),
     ]);
   }
 
-  function chooseService(s) {
-    state.service = s;
+  function isSelected(s) {
+    return state.selected.some((x) => x.id === s.id);
+  }
+
+  function totalDuration() {
+    return state.selected.reduce((sum, s) => sum + s.durationMin, 0);
+  }
+
+  function selectedIds() {
+    return state.selected.map((s) => s.id).join(',');
+  }
+
+  function toggleService(s) {
+    const max = state.config.maxServicesPerBooking || 4;
+    if (isSelected(s)) {
+      state.selected = state.selected.filter((x) => x.id !== s.id);
+    } else {
+      if (state.selected.length >= max) {
+        toast(`ניתן לבחור עד ${max} טיפולים בתור אחד`, 'error');
+        return;
+      }
+      state.selected.push(s);
+    }
+    // בחירה חדשה מאפסת את היום והשעה שנבחרו
     state.date = null;
     state.time = null;
+    refreshSelectionUI();
+  }
+
+  function refreshSelectionUI() {
+    for (const node of document.querySelectorAll('.service')) {
+      const on = state.selected.some((x) => String(x.id) === node.dataset.serviceId);
+      node.classList.toggle('selected', on);
+      node.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    const bar = $('selectionBar');
+    if (!state.selected.length) { bar.classList.add('hidden'); return; }
+    bar.classList.remove('hidden');
+    $('selCount').textContent = state.selected.length === 1
+      ? state.selected[0].name
+      : `${state.selected.length} טיפולים נבחרו`;
+    $('selSummary').textContent = `${state.selected.map((s) => s.name).join(' + ')} · סה"כ ${duration(totalDuration())}`;
+  }
+
+  function continueToDate() {
+    if (!state.selected.length) { toast('יש לבחור לפחות טיפול אחד'); return; }
     const today = state.config.today;
     state.calYear = Number(today.slice(0, 4));
     state.calMonth = Number(today.slice(5, 7));
@@ -115,15 +169,14 @@
   }
 
   function renderChosenService() {
-    const s = state.service;
     const box = $('chosenServiceBox');
     clear(box);
     box.appendChild(el('div', { class: 'row-between' }, [
       el('div', {}, [
-        el('div', { class: 'name', text: s.name, style: 'font-weight:700;color:var(--plum-700);font-size:18px' }),
-        el('div', { class: 'hint', style: 'margin:2px 0 0', text: `${duration(s.durationMin)}${s.price ? ' · ' + money(s.price) : ''}` }),
+        el('div', { style: 'font-weight:700;color:var(--plum-700);font-size:18px', text: state.selected.map((s) => s.name).join(' + ') }),
+        el('div', { class: 'hint', style: 'margin:2px 0 0', text: `סה"כ ${duration(totalDuration())}` }),
       ]),
-      el('button', { class: 'btn btn-ghost btn-sm', type: 'button', text: 'החלפת טיפול', onclick: () => show('service', 'service') }),
+      el('button', { class: 'btn btn-ghost btn-sm', type: 'button', text: 'שינוי הטיפולים', onclick: () => show('service', 'service') }),
     ]));
   }
 
@@ -133,7 +186,7 @@
     clear(box);
     box.appendChild(el('div', { class: 'spinner' }));
     try {
-      const data = await api(`/api/calendar?service_id=${state.service.id}&year=${state.calYear}&month=${state.calMonth}`);
+      const data = await api(`/api/calendar?service_ids=${selectedIds()}&year=${state.calYear}&month=${state.calMonth}`);
       renderCalendar(data);
     } catch (e) {
       clear(box);
@@ -224,7 +277,7 @@
     show('date', 'time');
     area.scrollIntoView({ behavior: 'smooth', block: 'start' });
     try {
-      const data = await api(`/api/slots?service_id=${state.service.id}&date=${date}`);
+      const data = await api(`/api/slots?service_ids=${selectedIds()}&date=${date}`);
       renderSlots(data);
     } catch (e) {
       clear(box);
@@ -340,17 +393,25 @@
     const list = $('summaryList');
     clear(list);
     const rows = [
-      ['הטיפול', state.service.name],
-      ['משך הטיפול', duration(state.service.durationMin)],
-      ['מחיר', state.service.price ? money(state.service.price) : 'ייקבע במקום'],
-      ['תאריך', `${formatIL(state.date)} (יום ${dayNameOf(state.date)})`],
-      ['שעה', `${state.time} - ${state.slotEnd}`],
-      ['שם', state.details.fullName],
-      ['טלפון', state.details.phone],
+      [state.selected.length > 1 ? 'הטיפולים' : 'הטיפול', state.selected.map((s) => s.name)],
+      ['משך כולל', [duration(totalDuration())]],
+      ['תאריך', [`${formatIL(state.date)} (יום ${dayNameOf(state.date)})`]],
+      ['שעה', [`${state.time} - ${state.slotEnd}`]],
+      ['שם', [state.details.fullName]],
+      ['טלפון', [state.details.phone]],
     ];
-    if (state.details.note) rows.push(['הערה', state.details.note]);
-    for (const [k, v] of rows) {
-      list.appendChild(el('li', {}, [el('span', { class: 'k', text: k }), el('span', { class: 'v', text: v })]));
+    if (state.config.showPrices) {
+      const priced = state.selected.filter((s) => s.price);
+      const total = priced.reduce((sum, s) => sum + Number(s.price), 0);
+      rows.splice(2, 0, ['מחיר', [total ? money(total) : 'ייקבע במקום']]);
+    }
+    if (state.details.note) rows.push(['הערה', [state.details.note]]);
+    for (const [k, values] of rows) {
+      list.appendChild(el('li', {}, [
+        el('span', { class: 'k', text: k }),
+        el('span', { class: 'v' + (values.length > 1 ? ' multi' : '') },
+          values.map((v) => el('span', { text: v }))),
+      ]));
     }
   }
 
@@ -369,7 +430,7 @@
       const data = await api('/api/book', {
         method: 'POST',
         body: {
-          serviceId: state.service.id,
+          serviceIds: state.selected.map((s) => s.id),
           date: state.date,
           time: state.time,
           ...state.details,
@@ -394,8 +455,9 @@
 
   function renderSuccess(data) {
     const a = data.appointment;
+    const label = (a.services && a.services.length > 1) ? `לטיפולים ${a.service}` : `לטיפול ${a.service}`;
     $('successText').textContent =
-      `מחכות לך אצל ${state.config.businessName} בתאריך ${a.dateIL}, בשעה ${a.startTime}, לטיפול ${a.service}.`;
+      `מחכות לך אצל ${state.config.businessName} בתאריך ${a.dateIL}, בשעה ${a.startTime}, ${label}.`;
     $('pendingNote').classList.toggle('hidden', a.status !== 'pending');
     $('icsLink').href = data.calendar.ics;
     $('googleLink').href = data.calendar.google;
@@ -426,7 +488,7 @@
             const res = await api('/api/waitlist', {
               method: 'POST',
               body: {
-                fullName: name.value.trim(), phone: tel, serviceId: state.service.id,
+                fullName: name.value.trim(), phone: tel, serviceIds: state.selected.map((x) => x.id),
                 date, timeFrom: from.value || null, timeTo: to.value || null,
               },
             });
@@ -516,7 +578,13 @@
     $('btnMine').addEventListener('click', () => { show('my', null); loadMine(); });
     $('detailsForm').addEventListener('submit', onDetailsSubmit);
     $('btnConfirm').addEventListener('click', confirmBooking);
-    $('btnNewBooking').addEventListener('click', () => { state.date = state.time = null; show('service', 'service'); loadServices(); });
+    $('btnNewBooking').addEventListener('click', () => {
+      state.date = state.time = null;
+      state.selected = [];
+      show('service', 'service');
+      loadServices();
+    });
+    $('btnToDate').addEventListener('click', continueToDate);
     $('btnCopyLink').addEventListener('click', async () => {
       const url = $('manageLink').href;
       try { await navigator.clipboard.writeText(url); toast('הקישור הועתק'); }

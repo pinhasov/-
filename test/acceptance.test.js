@@ -346,3 +346,96 @@ test('בקשת שינוי ללא כותרת אבטחה נדחית', async () => 
   });
   assert.equal(res.status, 403);
 });
+
+// ---------- בחירת כמה טיפולים בתור אחד ----------
+test('ניתן לבחור כמה טיפולים בתור אחד והמערכת מחשבת את המשך הכולל', async () => {
+  const date = futureDate(T, { weekday: 0, minDays: 25 });
+  const slots = await srv.req('GET', `/api/slots?service_ids=${short.id},${long.id}&date=${date}`);
+  assert.equal(slots.status, 200);
+  assert.equal(slots.data.durationMin, 130, 'משך התור הוא סכום שני הטיפולים');
+  assert.equal(slots.data.serviceName, `${short.name} + ${long.name}`);
+  // שעות הפעילות 09:00-17:00 – טיפול של 130 דקות יכול להתחיל לכל היותר ב-14:50
+  const free = slots.data.slots.filter((s) => s.status === 'free');
+  assert.equal(free[free.length - 1].time, '14:45');
+
+  const book = await srv.req('POST', '/api/book', {
+    body: {
+      serviceIds: [short.id, long.id], date, time: '10:00',
+      fullName: 'רונית אלון', phone: '0541230000', acceptTerms: true,
+    },
+  });
+  assert.equal(book.status, 201);
+  const appt = book.data.appointment;
+  assert.equal(appt.startTime, '10:00');
+  assert.equal(appt.endTime, '12:10', 'שעת הסיום לפי סכום הטיפולים');
+  assert.equal(appt.services.length, 2);
+  assert.deepEqual(appt.services.map((s) => s.name), [short.name, long.name]);
+
+  // כל הטווח נחסם ללקוחות אחרות
+  const after = await srv.req('GET', `/api/slots?service_id=${short.id}&date=${date}`);
+  const byTime = Object.fromEntries(after.data.slots.map((s) => [s.time, s.status]));
+  assert.equal(byTime['10:00'], 'taken');
+  assert.equal(byTime['11:30'], 'taken');
+  assert.equal(byTime['12:00'], 'taken');
+  assert.equal(byTime['12:15'], 'free');
+});
+
+test('בחירת אותו טיפול פעמיים או מזהה שגוי נדחית בעברית', async () => {
+  const date = futureDate(T, { weekday: 0, minDays: 25 });
+  const bad = await srv.req('GET', `/api/slots?service_ids=99999&date=${date}`);
+  assert.equal(bad.status, 404);
+  assert.match(bad.data.error, /לא נמצא/);
+
+  const empty = await srv.req('GET', `/api/slots?service_ids=&date=${date}`);
+  assert.equal(empty.status, 400);
+  assert.match(empty.data.error, /לפחות טיפול אחד/);
+
+  // כפילות מנוטרלת ואינה מכפילה את משך הטיפול
+  const dup = await srv.req('GET', `/api/slots?service_ids=${short.id},${short.id}&date=${date}`);
+  assert.equal(dup.data.durationMin, short.duration_min);
+});
+
+test('כמות הטיפולים בתור אחד מוגבלת לפי ההגדרה', async () => {
+  db.setSetting('max_services_per_booking', '2');
+  const date = futureDate(T, { weekday: 0, minDays: 25 });
+  const extra = db.get().prepare(
+    "INSERT INTO services (name, duration_min, buffer_min) VALUES ('עיצוב גבות', 20, 0)"
+  ).run();
+  const res = await srv.req('GET', `/api/slots?service_ids=${short.id},${long.id},${Number(extra.lastInsertRowid)}&date=${date}`);
+  assert.equal(res.status, 400);
+  assert.match(res.data.error, /עד 2 טיפולים/);
+  db.setSetting('max_services_per_booking', '4');
+});
+
+test('מחירים אינם מוצגים ללקוחה כשההגדרה כבויה', async () => {
+  db.setSetting('show_prices', '0');
+  const config = await srv.req('GET', '/api/config');
+  assert.equal(config.data.showPrices, false);
+
+  const services = await srv.req('GET', '/api/services');
+  assert.ok(services.data.services.every((s) => s.price === null), 'אין מחיר בכרטיסי הטיפולים');
+  assert.ok(!JSON.stringify(services.data).includes('260'), 'סכום המחיר אינו נשלח ללקוחה');
+
+  const book = await srv.req('POST', '/api/book', {
+    body: {
+      serviceId: short.id, date: futureDate(T, { weekday: 5, minDays: 25 }), time: '10:00',
+      fullName: 'שני מור', phone: '0543219876', acceptTerms: true,
+    },
+  });
+  assert.equal(book.status, 201);
+  assert.equal(book.data.appointment.price, null, 'אין מחיר באישור התור');
+
+  const info = await srv.req('GET', `/api/appointment/${book.data.appointment.manageToken}`);
+  assert.equal(info.data.appointment.price, null);
+
+  // המחיר עדיין זמין למנהלים לצורך דוחות פנימיים
+  const admin = await srv.req('GET', `/api/admin/appointments?q=שני מור`, { cookie: adminCookie });
+  assert.equal(admin.data.appointments[0].price, short.price);
+});
+
+test('ניתן להחזיר הצגת מחירים מההגדרות בלי שינוי קוד', async () => {
+  db.setSetting('show_prices', '1');
+  const services = await srv.req('GET', '/api/services');
+  assert.ok(services.data.services.some((s) => s.price !== null));
+  db.setSetting('show_prices', '0');
+});

@@ -51,6 +51,42 @@ function getService(id, { onlyBookable = false } = {}) {
   return s;
 }
 
+/** צירוף כמה טיפולים לטיפול אחד "מאוחד" לצורך חישוב הזמינות */
+function combineServices(services) {
+  return {
+    id: services[0].id,
+    name: services.map((s) => s.name).join(' + '),
+    duration_min: services.reduce((sum, s) => sum + Number(s.duration_min || 0), 0),
+    buffer_min: Math.max(0, ...services.map((s) => Number(s.buffer_min || 0))),
+    price: services.every((s) => s.price === null || s.price === undefined)
+      ? null
+      : services.reduce((sum, s) => sum + Number(s.price || 0), 0),
+    requires_approval: services.some((s) => s.requires_approval) ? 1 : 0,
+    active: 1,
+    bookable_online: 1,
+    deposit_type: 'none',
+    deposit_value: 0,
+  };
+}
+
+/**
+ * מקבל מזהה טיפול אחד או רשימת מזהים ומחזיר את הטיפולים והטיפול המאוחד.
+ */
+function resolveServices(ids, { onlyBookable = false } = {}) {
+  const raw = Array.isArray(ids) ? ids : [ids];
+  const unique = [];
+  for (const value of raw) {
+    const id = Number(value);
+    if (!Number.isInteger(id) || id <= 0) continue;
+    if (!unique.includes(id)) unique.push(id);
+  }
+  if (!unique.length) throw new BookingError('יש לבחור לפחות טיפול אחד');
+  const max = Math.max(1, db.settingInt('max_services_per_booking', 4));
+  if (unique.length > max) throw new BookingError(`ניתן לבחור עד ${max} טיפולים בתור אחד`);
+  const services = unique.map((id) => getService(id, { onlyBookable }));
+  return { services, combined: combineServices(services) };
+}
+
 function computeDeposit(service) {
   if (!db.settingBool('payments_enabled', false)) return 0;
   const price = Number(service.price || 0);
@@ -94,7 +130,7 @@ function withTransaction(fn) {
  */
 function createAppointment(input) {
   const {
-    serviceId, date, time, fullName, phone, email = '', note = '',
+    serviceId, serviceIds, date, time, fullName, phone, email = '', note = '',
     firstVisit = false, sensitivities = '', createdBy = 'customer',
     admin = null, adminOverride = false, internalNote = '', status: forcedStatus = null,
     now = new Date(),
@@ -108,7 +144,11 @@ function createAppointment(input) {
     throw new BookingError('כתובת הדואר האלקטרוני אינה תקינה');
   }
 
-  const service = getService(serviceId, { onlyBookable: !adminOverride });
+  const { services, combined } = resolveServices(
+    serviceIds && serviceIds.length ? serviceIds : serviceId,
+    { onlyBookable: !adminOverride },
+  );
+  const service = combined;
 
   return withTransaction((d) => {
     const check = av.checkSlot(date, time, service, { now, adminOverride });
@@ -120,6 +160,7 @@ function createAppointment(input) {
     const status = forcedStatus
       || (adminOverride ? 'confirmed' : (service.requires_approval || !autoApprove ? 'pending' : 'confirmed'));
 
+    const deposit = services.reduce((sum, s) => sum + computeDeposit(s), 0);
     const info = d.prepare(
       `INSERT INTO appointments
         (customer_id, service_id, service_name, date, start_time, end_time, buffer_min, status,
@@ -128,29 +169,56 @@ function createAppointment(input) {
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).run(
       customerId, service.id, service.name, date, check.start, check.end, service.buffer_min || 0, status,
-      service.price ?? null, computeDeposit(service), cleanNote(note) || null, cleanNote(internalNote) || null,
+      service.price ?? null, deposit, cleanNote(note) || null, cleanNote(internalNote) || null,
       firstVisit ? 1 : 0, cleanNote(sensitivities, 300) || null, token, createdBy,
     );
     const id = Number(info.lastInsertRowid);
+
+    const insService = d.prepare(
+      `INSERT INTO appointment_services (appointment_id, service_id, service_name, duration_min, sort_order)
+       VALUES (?,?,?,?,?)`
+    );
+    services.forEach((s, i) => insService.run(id, s.id, s.name, s.duration_min, i));
+
     if (admin) db.audit(admin, 'create_appointment', 'appointment', id, { date, time, service: service.name });
     return getAppointment(id, d);
   });
 }
 
+/** רשימת הטיפולים של תור (עם נפילה לאחור לתורים ישנים מטיפול יחיד) */
+function appointmentServices(appt, d = db.get()) {
+  if (!appt) return [];
+  const rows = d.prepare(
+    'SELECT service_id, service_name, duration_min FROM appointment_services WHERE appointment_id = ? ORDER BY sort_order, id'
+  ).all(appt.id);
+  if (rows.length) return rows;
+  return [{
+    service_id: appt.service_id,
+    service_name: appt.service_name,
+    duration_min: T.toMinutes(appt.end_time) - T.toMinutes(appt.start_time),
+  }];
+}
+
+function withServices(appt, d = db.get()) {
+  if (!appt) return appt;
+  appt.services = appointmentServices(appt, d);
+  return appt;
+}
+
 function getAppointment(id, d = db.get()) {
-  return d.prepare(
+  return withServices(d.prepare(
     `SELECT a.*, c.full_name AS customer_name, c.phone AS customer_phone, c.email AS customer_email
        FROM appointments a LEFT JOIN customers c ON c.id = a.customer_id
       WHERE a.id = ?`
-  ).get(Number(id));
+  ).get(Number(id)), d);
 }
 
 function getByToken(token) {
-  return db.get().prepare(
+  return withServices(db.get().prepare(
     `SELECT a.*, c.full_name AS customer_name, c.phone AS customer_phone, c.email AS customer_email
        FROM appointments a LEFT JOIN customers c ON c.id = a.customer_id
       WHERE a.manage_token = ?`
-  ).get(String(token || ''));
+  ).get(String(token || '')));
 }
 
 /** האם מותר ללקוחה לשנות/לבטל בהתאם למדיניות (סעיף 12) */
@@ -193,12 +261,15 @@ function rescheduleAppointment(id, { date, time, byAdmin = false, admin = null, 
     const check = customerCanModify(appt, now);
     if (!check.allowed) throw new BookingError(check.reason, 403);
   }
-  const service = appt.service_id
-    ? db.get().prepare('SELECT * FROM services WHERE id = ?').get(appt.service_id)
-    : null;
-  const effective = service || {
-    id: null, name: appt.service_name, duration_min: T.toMinutes(appt.end_time) - T.toMinutes(appt.start_time),
-    buffer_min: appt.buffer_min, price: appt.price, active: 1, bookable_online: 1,
+  // משך התור נשמר כפי שנקבע, גם אם משך הטיפול שונה מאז במערכת הניהול
+  const effective = {
+    id: appt.service_id,
+    name: appt.service_name,
+    duration_min: T.toMinutes(appt.end_time) - T.toMinutes(appt.start_time),
+    buffer_min: appt.buffer_min,
+    price: appt.price,
+    active: 1,
+    bookable_online: 1,
   };
 
   return withTransaction((d) => {
@@ -218,9 +289,12 @@ function rescheduleAppointment(id, { date, time, byAdmin = false, admin = null, 
 
 /** פרטי תור כפי שהם מוצגים ללקוחה (ללא מידע פנימי) */
 function publicView(appt, { manageUrl = '' } = {}) {
+  const showPrices = db.settingBool('show_prices', false);
   return {
     id: appt.id,
     serviceId: appt.service_id,
+    serviceIds: (appt.services || []).map((s) => s.service_id).filter(Boolean),
+    services: (appt.services || []).map((s) => ({ name: s.service_name, durationMin: s.duration_min })),
     service: appt.service_name,
     date: appt.date,
     dateIL: T.formatIL(appt.date),
@@ -228,7 +302,7 @@ function publicView(appt, { manageUrl = '' } = {}) {
     startTime: appt.start_time,
     endTime: appt.end_time,
     durationMin: T.toMinutes(appt.end_time) - T.toMinutes(appt.start_time),
-    price: appt.price,
+    price: showPrices ? appt.price : null,
     depositAmount: appt.deposit_amount,
     status: appt.status,
     statusLabel: STATUS_LABELS[appt.status] || appt.status,
@@ -243,6 +317,7 @@ function publicView(appt, { manageUrl = '' } = {}) {
 module.exports = {
   STATUSES, STATUS_LABELS, CANCELLED, BookingError,
   normalizePhone, validPhone, cleanText, cleanNote, getService, computeDeposit,
+  resolveServices, combineServices, appointmentServices,
   createAppointment, getAppointment, getByToken, cancelAppointment, rescheduleAppointment,
   customerCanModify, publicView, withTransaction, upsertCustomer,
 };

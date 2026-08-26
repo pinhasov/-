@@ -58,9 +58,17 @@
 
   <!-- בחירת טיפול -->
   <section id="screen-service" class="screen hidden">
-    <h2 class="section-title">איזה טיפול תרצי?</h2>
+    <h2 class="section-title">אילו טיפולים תרצי?</h2>
+    <p class="hint" id="serviceHint">ניתן לבחור יותר מטיפול אחד – המערכת תשריין זמן לכולם יחד.</p>
     <div class="service-list" id="serviceList"><div class="spinner"></div></div>
     <p class="center"><button class="btn btn-ghost btn-sm" data-back="welcome">חזרה</button></p>
+    <div class="selection-bar hidden" id="selectionBar">
+      <div class="sel-info">
+        <strong id="selCount"></strong>
+        <span class="hint" id="selSummary"></span>
+      </div>
+      <button class="btn" type="button" id="btnToDate">המשך</button>
+    </div>
   </section>
 
   <!-- בחירת יום ושעה -->

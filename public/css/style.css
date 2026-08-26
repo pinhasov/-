@@ -154,6 +154,27 @@ a { color: var(--plum-600); }
 .pill.green { background: var(--green-bg); color: var(--green-fg); }
 .pill.red { background: var(--red-bg); color: var(--red-fg); }
 
+/* ---------- סרגל בחירת טיפולים ---------- */
+.selection-bar {
+  position: sticky; bottom: 0; z-index: 30;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--cream); border: 1px solid var(--rose-200); border-radius: var(--radius);
+  padding: 12px 14px; margin: 12px 0 8px; box-shadow: 0 -4px 18px rgba(109, 58, 78, .12);
+}
+.selection-bar .sel-info { min-width: 0; flex: 1 1 auto; }
+.selection-bar strong { display: block; color: var(--plum-700); font-size: 16px; }
+.selection-bar .hint { display: block; margin: 2px 0 0; font-size: 13px; line-height: 1.35; }
+.selection-bar .btn { flex: none; min-height: 46px; padding: 10px 22px; }
+.service .check {
+  width: 28px; height: 28px; border-radius: 50%; flex: none;
+  border: 2px solid var(--rose-200); background: #fff;
+  display: flex; align-items: center; justify-content: center;
+  color: transparent; font-weight: 700; font-size: 16px;
+}
+.service.selected .check { background: var(--plum-600); border-color: var(--plum-600); color: #fff; }
+.summary .v.multi { text-align: end; font-weight: 600; }
+.summary .v.multi span { display: block; }
+
 /* ---------- לוח שנה ---------- */
 .calendar { background: var(--cream); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; box-shadow: var(--shadow-sm); }
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }

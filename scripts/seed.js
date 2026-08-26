@@ -10,13 +10,13 @@ const db = require('../src/db');
 const auth = require('../src/auth');
 
 const SERVICES = [
-  { name: 'פדיקור', description: 'טיפול פדיקור מלא כולל עיצוב וטיפוח', duration_min: 60, price: 180, buffer_min: 10, sort_order: 1 },
-  { name: 'מניקור', description: 'טיפול ידיים, עיצוב וטיפוח ציפורניים', duration_min: 45, price: 140, buffer_min: 10, sort_order: 2 },
-  { name: 'בניית ציפורניים', description: 'בנייה בג\'ל או אקריל, כולל עיצוב', duration_min: 90, price: 260, buffer_min: 15, sort_order: 3 },
-  { name: 'לק ג\'ל', description: 'לק ג\'ל עמיד כולל הסרה', duration_min: 40, price: 120, buffer_min: 10, sort_order: 4 },
-  { name: 'טיפול פנים', description: 'ניקוי עמוק והזנה לפי סוג העור', duration_min: 60, price: 220, buffer_min: 15, sort_order: 5 },
-  { name: 'עיצוב גבות', description: 'עיצוב גבות מדויק', duration_min: 20, price: 60, buffer_min: 5, sort_order: 6 },
-  { name: 'שעווה', description: 'הסרת שיער בשעווה', duration_min: 30, price: 90, buffer_min: 10, sort_order: 7 },
+  { name: 'פדיקור', description: 'טיפול פדיקור מלא כולל עיצוב וטיפוח', duration_min: 60, buffer_min: 10, sort_order: 1 },
+  { name: 'מניקור', description: 'טיפול ידיים, עיצוב וטיפוח ציפורניים', duration_min: 45, buffer_min: 10, sort_order: 2 },
+  { name: 'בניית ציפורניים', description: 'בנייה בג\'ל או אקריל, כולל עיצוב', duration_min: 90, buffer_min: 15, sort_order: 3 },
+  { name: 'לק ג\'ל', description: 'לק ג\'ל עמיד כולל הסרה', duration_min: 40, buffer_min: 10, sort_order: 4 },
+  { name: 'טיפול פנים', description: 'ניקוי עמוק והזנה לפי סוג העור', duration_min: 60, buffer_min: 15, sort_order: 5 },
+  { name: 'עיצוב גבות', description: 'עיצוב גבות מדויק', duration_min: 20, buffer_min: 5, sort_order: 6 },
+  { name: 'שעווה', description: 'הסרת שיער בשעווה', duration_min: 30, buffer_min: 10, sort_order: 7 },
 ];
 
 function randomPassword() {
@@ -36,7 +36,7 @@ function run({ keepOpen = false } = {}) {
       `INSERT INTO services (name, description, duration_min, price, buffer_min, sort_order)
        VALUES (?,?,?,?,?,?)`
     );
-    for (const s of SERVICES) ins.run(s.name, s.description, s.duration_min, s.price, s.buffer_min, s.sort_order);
+    for (const s of SERVICES) ins.run(s.name, s.description, s.duration_min, s.price ?? null, s.buffer_min, s.sort_order);
     console.log(`נוספו ${SERVICES.length} טיפולים.`);
   } else {
     console.log('קיימים טיפולים במערכת – לא בוצע שינוי.');

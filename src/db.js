@@ -90,6 +90,17 @@ CREATE INDEX IF NOT EXISTS idx_appt_date   ON appointments(date, start_time);
 CREATE INDEX IF NOT EXISTS idx_appt_status ON appointments(status);
 CREATE INDEX IF NOT EXISTS idx_appt_cust   ON appointments(customer_id);
 
+-- הטיפולים שנבחרו לתור (ניתן לבחור כמה טיפולים בתור אחד)
+CREATE TABLE IF NOT EXISTS appointment_services (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  appointment_id INTEGER NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+  service_id     INTEGER REFERENCES services(id) ON DELETE SET NULL,
+  service_name   TEXT    NOT NULL,
+  duration_min   INTEGER NOT NULL,
+  sort_order     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_appt_svc ON appointment_services(appointment_id);
+
 -- שעות פעילות קבועות (ניתן להגדיר כמה טווחים ליום – הפסקה = פער בין טווחים)
 CREATE TABLE IF NOT EXISTS working_hours (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,6 +171,8 @@ const DEFAULT_SETTINGS = {
   max_advance_days: '90',        // עד כמה קדימה היומן פתוח
   cancel_cutoff_hours: '24',     // עד מתי מותר לבטל/לשנות
   auto_approve: '1',             // 1 = תור מאושר אוטומטית
+  show_prices: '0',              // הצגת מחירים ללקוחה – כבוי (אין מחירון)
+  max_services_per_booking: '4', // כמה טיפולים ניתן לבחור בתור אחד
   payments_enabled: '0',         // מקדמות/תשלום – כבוי בשלב ראשון
   waitlist_enabled: '1',
   cancellation_policy: 'ניתן לבטל או לשנות את התור עד 24 שעות לפני מועד הטיפול. לביטול בהתראה קצרה יותר יש ליצור קשר טלפוני עם לולה.',

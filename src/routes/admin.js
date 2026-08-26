@@ -13,7 +13,8 @@ const { sendJSON, fail, readJSON, send } = require('../http');
 const SETTABLE_SETTINGS = new Set([
   'business_name', 'page_title', 'intro_text', 'address', 'phone', 'whatsapp', 'logo_url',
   'slot_step_min', 'min_lead_hours', 'max_advance_days', 'cancel_cutoff_hours', 'auto_approve',
-  'payments_enabled', 'waitlist_enabled', 'cancellation_policy', 'terms_text', 'privacy_text',
+  'payments_enabled', 'waitlist_enabled', 'show_prices', 'max_services_per_booking',
+  'cancellation_policy', 'terms_text', 'privacy_text',
   'public_base_url',
 ]);
 
@@ -40,6 +41,8 @@ function adminView(a) {
     customerPhone: a.customer_phone || '',
     customerEmail: a.customer_email || '',
     serviceId: a.service_id,
+    serviceIds: (a.services || []).map((s) => s.service_id).filter(Boolean),
+    services: (a.services || []).map((s) => ({ name: s.service_name, durationMin: s.duration_min })),
     service: a.service_name,
     date: a.date,
     dateIL: T.formatIL(a.date),
@@ -83,7 +86,33 @@ function listAppointments({ from, to, status, q }) {
                  FROM appointments a LEFT JOIN customers c ON c.id = a.customer_id
                 ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
                 ORDER BY a.date, a.start_time`;
-  return db.get().prepare(sql).all(...args);
+  const rows = db.get().prepare(sql).all(...args);
+  return attachServices(rows);
+}
+
+/** מצרף לכל תור את רשימת הטיפולים שנבחרו – בשאילתה אחת */
+function attachServices(rows) {
+  if (!rows.length) return rows;
+  const ids = rows.map((r) => r.id);
+  const links = db.get().prepare(
+    `SELECT appointment_id, service_id, service_name, duration_min
+       FROM appointment_services
+      WHERE appointment_id IN (${ids.map(() => '?').join(',')})
+      ORDER BY sort_order, id`
+  ).all(...ids);
+  const byAppt = new Map();
+  for (const l of links) {
+    if (!byAppt.has(l.appointment_id)) byAppt.set(l.appointment_id, []);
+    byAppt.get(l.appointment_id).push(l);
+  }
+  for (const row of rows) {
+    row.services = byAppt.get(row.id) || [{
+      service_id: row.service_id,
+      service_name: row.service_name,
+      duration_min: T.toMinutes(row.end_time) - T.toMinutes(row.start_time),
+    }];
+  }
+  return rows;
 }
 
 function register(router) {
@@ -198,6 +227,7 @@ function register(router) {
     try {
       const appt = bk.createAppointment({
         serviceId: body.serviceId,
+        serviceIds: body.serviceIds,
         date: body.date,
         time: body.time,
         fullName: body.fullName,
@@ -485,11 +515,11 @@ function register(router) {
     const admin = requireAdmin(req, res); if (!admin) return;
     const customer = db.get().prepare('SELECT * FROM customers WHERE id = ?').get(Number(params.id));
     if (!customer) return fail(res, 404, 'הלקוחה לא נמצאה');
-    const appts = db.get().prepare(
+    const appts = attachServices(db.get().prepare(
       `SELECT a.*, c.full_name AS customer_name, c.phone AS customer_phone, c.email AS customer_email
          FROM appointments a JOIN customers c ON c.id = a.customer_id
         WHERE a.customer_id = ? ORDER BY a.date DESC, a.start_time DESC`
-    ).all(customer.id);
+    ).all(customer.id));
     sendJSON(res, 200, { ok: true, customer, appointments: appts.map(adminView) });
   });
 

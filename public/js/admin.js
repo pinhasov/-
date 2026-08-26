@@ -361,7 +361,25 @@
 
   function newAppointmentModal() {
     openModal('הוספת תור ידנית', (body, close) => {
-      const service = selectField(body, 'טיפול', state.services.map((s) => [String(s.id), `${s.name} (${s.duration_min} דק')`]), '');
+      const chosen = new Set();
+      const totalLine = el('div', { class: 'hint', text: 'לא נבחרו טיפולים' });
+      const bookable = state.services.filter((s) => s.active);
+      const updateTotal = () => {
+        const list = bookable.filter((s) => chosen.has(s.id));
+        totalLine.textContent = list.length
+          ? `${list.map((s) => s.name).join(' + ')} · סה"כ ${duration(list.reduce((sum, s) => sum + s.duration_min, 0))}`
+          : 'לא נבחרו טיפולים';
+      };
+      const list = el('div', { class: 'stack' }, bookable.map((s) => {
+        const cb = el('input', { type: 'checkbox' });
+        cb.addEventListener('change', () => {
+          if (cb.checked) chosen.add(s.id); else chosen.delete(s.id);
+          updateTotal();
+        });
+        return el('label', { class: 'checkbox' }, [cb, el('span', { text: `${s.name} (${s.duration_min} דק')` })]);
+      }));
+      body.appendChild(el('fieldset', {}, [el('legend', { text: 'טיפולים (ניתן לבחור כמה)' }), list, totalLine]));
+
       const date = inputField(body, 'תאריך', 'date', state.date || todayISO());
       const time = inputField(body, 'שעה', 'time', '');
       const name = inputField(body, 'שם הלקוחה', 'text', '');
@@ -375,7 +393,7 @@
         onclick: async () => {
           try {
             await send('/api/admin/appointments', 'POST', {
-              serviceId: Number(service.value), date: date.value, time: time.value,
+              serviceIds: [...chosen], date: date.value, time: time.value,
               fullName: name.value, phone: phone.value, internalNote: note.value,
             });
             close();
@@ -442,7 +460,7 @@
       const name = inputField(body, 'שם הטיפול', 'text', s?.name || '');
       const desc = textareaField(body, 'תיאור', s?.description || '');
       const dur = inputField(body, 'משך בדקות', 'number', s?.duration_min ?? 60);
-      const price = inputField(body, 'מחיר (ריק = ללא מחיר מוצג)', 'number', s?.price ?? '');
+      const price = inputField(body, 'מחיר לשימוש פנימי (מוצג ללקוחות רק אם הופעלה הצגת מחירים)', 'number', s?.price ?? '');
       const buffer = inputField(body, 'זמן מעבר אחרי הטיפול (דקות)', 'number', s?.buffer_min ?? 0);
       const image = inputField(body, 'כתובת תמונה (לא חובה)', 'text', s?.image_url || '');
       const order = inputField(body, 'סדר תצוגה', 'number', s?.sort_order ?? 0);
@@ -725,6 +743,8 @@
     ['max_advance_days', 'עד כמה ימים קדימה היומן פתוח', 'number'],
     ['cancel_cutoff_hours', 'עד כמה שעות לפני ניתן לבטל', 'number'],
     ['auto_approve', 'אישור אוטומטי של תורים', 'bool'],
+    ['show_prices', 'הצגת מחירים ללקוחות (כבוי = ללא מחירון)', 'bool'],
+    ['max_services_per_booking', 'כמה טיפולים ניתן לבחור בתור אחד', 'number'],
     ['waitlist_enabled', 'רשימת המתנה פעילה', 'bool'],
     ['payments_enabled', 'גביית מקדמה פעילה', 'bool'],
     ['cancellation_policy', 'מדיניות ביטולים', 'textarea'],

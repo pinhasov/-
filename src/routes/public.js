@@ -31,13 +31,23 @@ function businessInfo() {
   };
 }
 
+/** מזהי הטיפולים שנבחרו – תומך גם בטיפול אחד וגם בכמה טיפולים */
+function servicesFromQuery(url) {
+  const ids = [];
+  for (const key of ['service_ids', 'service_id']) {
+    for (const value of url.searchParams.getAll(key)) ids.push(...String(value).split(','));
+  }
+  return bk.resolveServices(ids, { onlyBookable: true });
+}
+
 function serviceCard(s) {
+  const showPrices = db.settingBool('show_prices', false);
   return {
     id: s.id,
     name: s.name,
     description: s.description || '',
     durationMin: s.duration_min,
-    price: s.price,
+    price: showPrices ? s.price : null,
     imageUrl: s.image_url || '',
     requiresApproval: !!s.requires_approval,
     depositRequired: db.settingBool('payments_enabled', false) && s.deposit_type !== 'none',
@@ -66,6 +76,8 @@ function register(router) {
       maxAdvanceDays: Number(s.max_advance_days || 90),
       waitlistEnabled: s.waitlist_enabled === '1',
       paymentsEnabled: s.payments_enabled === '1',
+      showPrices: s.show_prices === '1',
+      maxServicesPerBooking: Number(s.max_services_per_booking || 4),
       today: T.todayISO(),
       dayNames: T.DAY_NAMES,
       monthNames: T.MONTH_NAMES,
@@ -84,7 +96,7 @@ function register(router) {
   router.get('/api/calendar', (req, res) => {
     const url = new URL(req.url, 'http://x');
     let service;
-    try { service = bk.getService(url.searchParams.get('service_id'), { onlyBookable: true }); }
+    try { service = servicesFromQuery(url).combined; }
     catch (e) { return fail(res, e.status || 400, e.message); }
 
     const today = T.todayISO();
@@ -93,7 +105,7 @@ function register(router) {
     if (year < 2000 || year > 2100 || month < 1 || month > 12) return fail(res, 400, 'תאריך לא תקין');
 
     const view = av.monthView(year, month, service);
-    sendJSON(res, 200, { ok: true, ...view, today, serviceId: service.id });
+    sendJSON(res, 200, { ok: true, ...view, today, serviceName: service.name, durationMin: service.duration_min });
   });
 
   /** כל שעות היום עם הסטטוס שלהן */
@@ -102,7 +114,7 @@ function register(router) {
     const date = url.searchParams.get('date');
     if (!T.isValidISO(date)) return fail(res, 400, 'תאריך לא תקין');
     let service;
-    try { service = bk.getService(url.searchParams.get('service_id'), { onlyBookable: true }); }
+    try { service = servicesFromQuery(url).combined; }
     catch (e) { return fail(res, e.status || 400, e.message); }
 
     const day = av.daySlots(date, service);
@@ -113,6 +125,7 @@ function register(router) {
       closedReason: day.closedReason,
       freeCount: day.freeCount,
       durationMin: service.duration_min,
+      serviceName: service.name,
       slots: day.slots,
     });
   });
@@ -129,6 +142,7 @@ function register(router) {
     try {
       const appt = bk.createAppointment({
         serviceId: body.serviceId,
+        serviceIds: body.serviceIds,
         date: body.date,
         time: body.time,
         fullName: body.fullName,
@@ -235,8 +249,12 @@ function register(router) {
     if (!T.isValidISO(body.date)) return fail(res, 400, 'יש לבחור תאריך');
 
     let service = null;
-    try { service = bk.getService(body.serviceId, { onlyBookable: true }); }
-    catch (e) { return fail(res, e.status || 400, e.message); }
+    try {
+      service = bk.resolveServices(
+        body.serviceIds && body.serviceIds.length ? body.serviceIds : body.serviceId,
+        { onlyBookable: true },
+      ).combined;
+    } catch (e) { return fail(res, e.status || 400, e.message); }
 
     db.get().prepare(
       `INSERT INTO waitlist (full_name, phone, service_id, service_name, desired_date, time_from, time_to, note)
