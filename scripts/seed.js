@@ -26,7 +26,7 @@ function randomPassword() {
   return out;
 }
 
-function run() {
+function run({ keepOpen = false } = {}) {
   db.open();
   const d = db.get();
 
@@ -57,11 +57,13 @@ function run() {
   if (created.length) {
     console.log('\n=== פרטי גישה למערכת הניהול ===');
     for (const c of created) {
-      console.log(`  ${c.name}: שם משתמש "${c.username}" | סיסמה: ${c.password}${c.generated ? '  (נוצרה אקראית)' : ''}`);
+      // סיסמה שהוגדרה מראש במשתני הסביבה אינה מודפסת ללוג
+      const shown = c.generated ? `סיסמה: ${c.password}  (נוצרה אקראית)` : 'סיסמה: לפי משתנה הסביבה שהוגדר';
+      console.log(`  ${c.name}: שם משתמש "${c.username}" | ${shown}`);
     }
     console.log('יש לשמור את הפרטים במקום בטוח ולהחליף סיסמה לאחר ההתחברות הראשונה.\n');
   }
-  db.close();
+  if (!keepOpen) db.close();
 }
 
 if (require.main === module) run();

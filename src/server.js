@@ -77,8 +77,25 @@ function createApp() {
   });
 }
 
+/**
+ * אתחול ראשוני אוטומטי בעלייה הראשונה (סביבות ענן שאין בהן גישת שורת פקודה).
+ * פועל רק כאשר AUTO_SEED=1 וכאשר עדיין אין משתמשי ניהול במערכת.
+ */
+function autoSeed() {
+  if (process.env.AUTO_SEED !== '1') return;
+  const { c } = db.get().prepare('SELECT COUNT(*) AS c FROM admins').get();
+  if (c > 0) return;
+  if (!process.env.LOLA_PASSWORD || !process.env.AVI_PASSWORD) {
+    console.log('⚠  AUTO_SEED פעיל אך חסרות הסיסמאות LOLA_PASSWORD / AVI_PASSWORD – האתחול דולג.');
+    return;
+  }
+  require('../scripts/seed').run({ keepOpen: true });
+  console.log('בוצע אתחול ראשוני: טיפולים ומשתמשי ניהול נוצרו.');
+}
+
 function start() {
   const server = createApp();
+  try { autoSeed(); } catch (err) { console.error('שגיאה באתחול הראשוני:', err.message); }
   server.listen(PORT, HOST, () => {
     const { c } = db.get().prepare('SELECT COUNT(*) AS c FROM admins').get();
     console.log(`מערכת התורים של לולה פועלת: http://localhost:${PORT}`);
