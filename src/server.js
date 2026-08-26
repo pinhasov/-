@@ -93,8 +93,28 @@ function autoSeed() {
   console.log('בוצע אתחול ראשוני: טיפולים ומשתמשי ניהול נוצרו.');
 }
 
+/**
+ * בדיקת אחסון בעליית השרת – מוודאת שמסד הנתונים יושב על אחסון קבוע
+ * ושהנתונים אינם נמחקים בכל פריסה מחדש.
+ */
+function logStorageStatus() {
+  const mount = process.env.RAILWAY_VOLUME_MOUNT_PATH || process.env.PERSISTENT_MOUNT_PATH || '';
+  console.log(`מסד הנתונים: ${db.DB_PATH}`);
+  console.log(`הנתונים נשמרו מהפעלה קודמת: ${db.wasExisting() ? 'כן' : 'לא (מסד נתונים חדש)'}`);
+  if (mount) {
+    const onVolume = path.resolve(db.DB_PATH).startsWith(path.resolve(mount));
+    console.log(`דיסק קבוע מחובר בנתיב: ${mount}`);
+    if (!onVolume) {
+      console.log(`⚠  אזהרה: מסד הנתונים אינו נמצא על הדיסק הקבוע. יש להגדיר DB_PATH לנתיב שמתחת ל-${mount}, אחרת התורים יימחקו בכל פריסה.`);
+    }
+  } else if (process.env.NODE_ENV === 'production') {
+    console.log('⚠  אזהרה: לא זוהה דיסק קבוע. בסביבת ענן ללא דיסק קבוע התורים נמחקים בכל פריסה מחדש.');
+  }
+}
+
 function start() {
   const server = createApp();
+  logStorageStatus();
   try { autoSeed(); } catch (err) { console.error('שגיאה באתחול הראשוני:', err.message); }
   server.listen(PORT, HOST, () => {
     const { c } = db.get().prepare('SELECT COUNT(*) AS c FROM admins').get();

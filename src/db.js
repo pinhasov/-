@@ -9,6 +9,7 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'lola.db');
 
 let db = null;
+let existedAtBoot = null;   // האם קובץ מסד הנתונים היה קיים לפני עליית השרת
 
 const SCHEMA = `
 PRAGMA journal_mode = WAL;
@@ -183,6 +184,7 @@ const DEFAULT_SETTINGS = {
 function open(dbPath = DB_PATH) {
   if (db) return db;
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  if (existedAtBoot === null) existedAtBoot = fs.existsSync(dbPath);
   db = new DatabaseSync(dbPath);
   db.exec(SCHEMA);
   ensureDefaults();
@@ -196,6 +198,11 @@ function get() {
 
 function close() {
   if (db) { db.close(); db = null; }
+}
+
+/** האם מסד הנתונים כבר היה קיים בעליית השרת (בדיקת שמירת נתונים) */
+function wasExisting() {
+  return existedAtBoot === true;
 }
 
 function ensureDefaults() {
@@ -251,5 +258,5 @@ function audit(admin, action, entity, entityId, details) {
 
 module.exports = {
   DB_PATH, DATA_DIR, DEFAULT_SETTINGS,
-  open, get, close, settings, setting, settingInt, settingBool, setSetting, audit,
+  open, get, close, wasExisting, settings, setting, settingInt, settingBool, setSetting, audit,
 };
