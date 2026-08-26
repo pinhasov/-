@@ -257,7 +257,8 @@ test('15. קובץ היומן נוצר עם התאריך והשעות הנכונ
   assert.ok(ics.includes(`DTSTART:${stamp(start)}`), 'שעת ההתחלה נכונה');
   assert.ok(ics.includes(`DTEND:${stamp(end)}`), 'שעת הסיום לפי משך הטיפול');
   assert.ok(ics.includes('BEGIN:VEVENT') && ics.includes('END:VCALENDAR'));
-  assert.ok(ics.includes('VALARM'), 'נכללת תזכורת ביומן');
+  assert.ok(ics.includes('TRIGGER:-P1D'), 'תזכורת יום לפני התור');
+  assert.ok(ics.includes('TRIGGER:-PT2H'), 'תזכורת שעתיים לפני התור');
 
   const info = await srv.req('GET', `/api/appointment/${token}`);
   assert.ok(info.data.calendar.google.includes('calendar.google.com'));
