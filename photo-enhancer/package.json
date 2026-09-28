@@ -1,0 +1,10 @@
+{
+  "name": "photo-enhancer",
+  "version": "1.0.0",
+  "description": "משדרג תמונות – שדרוג עד 100 תמונות בבינה מלאכותית, בדפדפן",
+  "private": true,
+  "main": "serve.js",
+  "engines": { "node": ">=18" },
+  "scripts": { "start": "node serve.js" },
+  "dependencies": {}
+}

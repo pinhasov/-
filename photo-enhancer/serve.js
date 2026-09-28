@@ -30,11 +30,15 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, '127.0.0.1', () => {
+// בענן (Railway) מאזינים לכל הכתובות; במחשב – רק למחשב עצמו
+const IN_CLOUD = !!process.env.RAILWAY_ENVIRONMENT;
+const HOST = process.env.HOST || (IN_CLOUD ? '0.0.0.0' : '127.0.0.1');
+
+server.listen(PORT, HOST, () => {
   const url = `http://localhost:${PORT}`;
   console.log(`משדרג תמונות פועל בכתובת: ${url}`);
+  if (IN_CLOUD || process.env.NO_OPEN) return;
   console.log('להפסקה: סגור את החלון הזה (או Ctrl+C).');
-  if (process.env.NO_OPEN) return;
   const cmd = process.platform === 'win32' ? `start "" "${url}"` : process.platform === 'darwin' ? `open "${url}"` : `xdg-open "${url}"`;
   exec(cmd, () => {});
 });
