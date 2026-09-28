@@ -143,3 +143,7 @@ dialog#compare::backdrop { background: rgba(0, 0, 0, .7); }
 .notice[data-kind="ok"] { color: var(--ok); }
 .notice[data-kind="warn"] { color: var(--warn); background: var(--warn-bg); }
 .notice[data-kind="error"] { color: var(--err); }
+
+.top-side { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.share { display: flex; gap: 6px; }
+.share .button { background: var(--panel); }
