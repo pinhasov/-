@@ -45,6 +45,24 @@ function saveSettings() {
 }
 
 /* ================= מנוע AI ================= */
+// בגרסת הרשת קבצי המשקלים של המודל מתפרסמים כטקסט base64 (‎.b64.txt) –
+// אם ‎.bin לא נמצא, טוענים את גרסת הטקסט וממירים חזרה לבינארי.
+{
+  const origFetch = window.fetch.bind(window);
+  window.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url;
+    if (!/(^|\/)models\/.+\.bin$/.test(url)) return origFetch(input, init);
+    const res = await origFetch(url, init).catch(() => null);
+    if (res && res.ok) return res;
+    const alt = await origFetch(url.replace(/\.bin$/, '.b64.txt'), init);
+    if (!alt.ok) return alt;
+    const bin = atob((await alt.text()).trim());
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Response(bytes, { status: 200, headers: { 'Content-Type': 'application/octet-stream' } });
+  };
+}
+
 const upscalers = new Map();
 async function initEngine() {
   try {
@@ -74,8 +92,8 @@ let abortCtrl = null;
 function addFiles(fileList) {
   const imgs = [...fileList].filter((f) => f.type.startsWith('image/') || /\.(jpe?g|png|webp|bmp|gif)$/i.test(f.name));
   const room = MAX_FILES - items.length;
-  if (room <= 0) { alert(`אפשר לטעון עד ${MAX_FILES} תמונות בכל סבב. נקה את הרשימה או הסר תמונות.`); return; }
-  if (imgs.length > room) alert(`נוספו ${room} תמונות בלבד – המקסימום הוא ${MAX_FILES} בכל סבב.`);
+  if (room <= 0) { notify(`אפשר לטעון עד ${MAX_FILES} תמונות בכל סבב. נקה את הרשימה או הסר תמונות.`, 'warn'); return; }
+  if (imgs.length > room) notify(`נוספו ${room} תמונות בלבד – המקסימום הוא ${MAX_FILES} בכל סבב.`, 'warn');
   for (const file of imgs.slice(0, room)) {
     const item = { id: nextId++, file, status: 'pending', progress: 0, blob: null, url: null, origUrl: null, width: 0, height: 0, outW: 0, outH: 0, error: '' };
     items.push(item);
@@ -111,6 +129,11 @@ function createRow(item) {
   row.querySelector('.compareBtn').addEventListener('click', () => openCompare(item));
   row.querySelector('.retryBtn').addEventListener('click', () => { item.status = 'pending'; item.error = ''; item.progress = 0; renderRow(item); refresh(); if (!running) runQueue(); });
   row.querySelector('.removeBtn').addEventListener('click', () => removeItem(item));
+  row.querySelector('.downloadBtn').addEventListener('click', (e) => {
+    if (!IN_ARTIFACT) return; // במחשב – קישור הורדה רגיל
+    e.preventDefault();
+    saveBlob(item.blob, outputName(item)).catch((err) => notify(`ההורדה נכשלה: ${friendlyError(err)}`, 'error'));
+  });
   return row;
 }
 
@@ -136,7 +159,7 @@ function renderRow(item) {
   r.querySelector('.bar > div').style.width = `${Math.round((item.status === 'done' ? 1 : item.progress) * 100)}%`;
   r.querySelector('.compareBtn').hidden = item.status !== 'done';
   const dl = r.querySelector('.downloadBtn');
-  dl.hidden = item.status !== 'done';
+  dl.hidden = item.status !== 'done' || (IN_ARTIFACT && !saver);
   if (item.url) { dl.href = item.url; dl.download = outputName(item); }
   r.querySelector('.retryBtn').hidden = item.status !== 'error' || !item.width;
   r.querySelector('.removeBtn').disabled = item.status === 'working';
@@ -149,7 +172,9 @@ function refresh() {
   els.start.disabled = running || pending === 0;
   els.stop.disabled = !running;
   els.zip.disabled = done === 0;
-  els.folder.disabled = done === 0 || !('showDirectoryPicker' in window);
+  els.zip.hidden = IN_ARTIFACT && !saver;
+  els.folder.hidden = IN_ARTIFACT || !('showDirectoryPicker' in window);
+  els.folder.disabled = done === 0;
   els.clear.disabled = running || items.length === 0;
   els.drop.classList.toggle('compact', items.length > 0);
   els.summary.textContent = items.length
@@ -346,6 +371,44 @@ function unsharp(img, amount) {
 }
 
 /* ================= הורדות ================= */
+// בגרסת הרשת (קישור) הדפדפן חוסם הורדות ישירות – ההורדה עוברת דרך אישור של הצופה
+const IN_ARTIFACT = typeof window.claude?.use === 'function';
+let saver = null;
+if (IN_ARTIFACT) {
+  window.claude.use('downloads').then((d) => {
+    saver = d;
+    if (!d) notify('ההורדה לא זמינה בתצוגה הזו. פתח את הקישור בדפדפן רגיל (Chrome/Edge).', 'warn');
+    items.forEach(renderRow); refresh();
+  }).catch(() => {});
+}
+async function saveBlob(blob, filename) {
+  if (!IN_ARTIFACT) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    return;
+  }
+  if (!saver) throw new Error('ההורדה לא זמינה בתצוגה הזו');
+  try {
+    await saver.save({ filename, data: blob });
+  } catch (err) {
+    if (err && err.code === 'declined') return;
+    if (err && err.code === 'rate_limited') { notify('חלון הורדה כבר פתוח – אשר או סגור אותו קודם.', 'warn'); return; }
+    throw err;
+  }
+}
+
+let noticeTimer = null;
+function notify(text, kind = 'ok') {
+  const el = document.getElementById('notice');
+  el.textContent = text;
+  el.dataset.kind = kind;
+  el.hidden = false;
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => { el.hidden = true; }, 7000);
+}
 const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 function outputName(item) {
   const base = item.file.name.replace(/\.[^.]+$/, '');
@@ -372,13 +435,9 @@ async function downloadZip() {
     const zip = new JSZip();
     for (const { item, name } of uniqueNames(done)) zip.file(name, item.blob, { compression: 'STORE' });
     const blob = await zip.generateAsync({ type: 'blob', streamFiles: true }, (m) => { els.zip.textContent = `מכין ZIP… ${Math.round(m.percent)}%`; });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `enhanced-${new Date().toISOString().slice(0, 10)}.zip`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    await saveBlob(blob, `enhanced-${new Date().toISOString().slice(0, 10)}.zip`);
   } catch (err) {
-    alert(`יצירת ה-ZIP נכשלה (${friendlyError(err)}). נסה "שמור לתיקייה" או הורדה בודדת.`);
+    notify(`יצירת ה-ZIP נכשלה (${friendlyError(err)}). נסה הורדה בודדת.`, 'error');
   } finally {
     els.zip.textContent = label;
     refresh();
@@ -397,7 +456,7 @@ async function saveToFolder() {
     await w.close();
     saved++;
   }
-  alert(`נשמרו ${saved} תמונות בתיקייה "${dir.name}".`);
+  notify(`נשמרו ${saved} תמונות בתיקייה "${dir.name}".`, 'ok');
 }
 
 /* ================= השוואת לפני/אחרי ================= */

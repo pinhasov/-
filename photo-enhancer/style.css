@@ -10,10 +10,10 @@
   --err: #c92a2a;
   --warn-bg: #fff4e6;
   --warn: #b35900;
-  color-scheme: light dark;
+  color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #15171b;
     --panel: #1e2126;
     --text: #e8eaed;
@@ -25,7 +25,22 @@
     --err: #ff8787;
     --warn-bg: #3a2a14;
     --warn: #ffc078;
+    color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+    --bg: #15171b;
+    --panel: #1e2126;
+    --text: #e8eaed;
+    --muted: #9aa1ad;
+    --line: #2e3238;
+    --accent: #748ffc;
+    --accent-ink: #0d0f12;
+    --ok: #69db7c;
+    --err: #ff8787;
+    --warn-bg: #3a2a14;
+    --warn: #ffc078;
+    color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body {
@@ -123,3 +138,8 @@ dialog#compare::backdrop { background: rgba(0, 0, 0, .7); }
 .cmp-before { position: absolute; inset: 0; display: flex; justify-content: center; }
 .cmp-before img { width: 100%; height: 100%; }
 .cmp-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; box-shadow: 0 0 4px rgba(0,0,0,.6); pointer-events: none; }
+
+.notice { margin: 0 0 12px; padding: 10px 14px; border-radius: 8px; font-size: 14px; background: var(--panel); border: 1px solid var(--line); }
+.notice[data-kind="ok"] { color: var(--ok); }
+.notice[data-kind="warn"] { color: var(--warn); background: var(--warn-bg); }
+.notice[data-kind="error"] { color: var(--err); }
