@@ -15,7 +15,8 @@
     "seed": "node --disable-warning=ExperimentalWarning scripts/seed.js",
     "create-admin": "node --disable-warning=ExperimentalWarning scripts/create-admin.js",
     "icons": "node scripts/gen-icons.js",
-    "backup": "node --disable-warning=ExperimentalWarning scripts/backup.js"
+    "backup": "node --disable-warning=ExperimentalWarning scripts/backup.js",
+    "photos": "node photo-enhancer/serve.js"
   },
   "dependencies": {}
 }
