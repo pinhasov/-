@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>משדרג תמונות</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>משדרג תמונות</h1>
+      <p>עד 100 תמונות בכל סבב · עיבוד AI על המחשב שלך · שום תמונה לא עולה לאינטרנט</p>
+    </div>
+    <div class="engine" id="engine">טוען מנוע…</div>
+  </header>
+
+  <main>
+    <section class="panel settings" aria-label="הגדרות">
+      <h2>הגדרות</h2>
+
+      <label class="field">רמת איכות
+        <select id="quality">
+          <option value="fast">מהיר (מומלץ לרוב העבודות)</option>
+          <option value="max">איכות מקסימלית (איטי יותר)</option>
+        </select>
+      </label>
+
+      <label class="field">הגדלה
+        <select id="scale">
+          <option value="auto">אוטומטי</option>
+          <option value="2">×2</option>
+          <option value="4">×4</option>
+        </select>
+      </label>
+
+      <label class="field">גודל מקסימלי לתוצאה (צלע ארוכה)
+        <select id="maxEdge">
+          <option value="4000">4000 פיקסלים</option>
+          <option value="6000">6000 פיקסלים</option>
+          <option value="8000">8000 פיקסלים</option>
+        </select>
+      </label>
+
+      <fieldset class="field">
+        <legend>שיפורים נוספים</legend>
+        <label class="check"><input type="checkbox" id="levels"> תיקון חשיפה וניגודיות</label>
+        <label class="check"><input type="checkbox" id="vibrance"> חיזוק צבע עדין</label>
+        <label class="check"><input type="checkbox" id="sharpen"> חידוד</label>
+      </fieldset>
+
+      <label class="field">פורמט שמירה
+        <select id="format">
+          <option value="image/jpeg">JPG (איכות 95)</option>
+          <option value="image/png">PNG (ללא איבוד)</option>
+          <option value="image/webp">WebP (איכות 95)</option>
+        </select>
+      </label>
+    </section>
+
+    <section class="work">
+      <div id="drop" class="drop" tabindex="0" role="button" aria-label="בחירת תמונות">
+        <strong>גרור לכאן תמונות</strong>
+        <span>או לחץ לבחירה · JPG, PNG, WebP, BMP · עד 100 תמונות</span>
+        <input type="file" id="files" accept="image/jpeg,image/png,image/webp,image/bmp,image/gif" multiple hidden>
+      </div>
+
+      <div class="toolbar">
+        <button id="start" class="primary" disabled>שדרג הכול</button>
+        <button id="stop" disabled>עצור</button>
+        <button id="zip" disabled>הורד הכול (ZIP)</button>
+        <button id="folder" disabled>שמור לתיקייה…</button>
+        <button id="clear" disabled>נקה רשימה</button>
+        <span id="summary" class="summary"></span>
+      </div>
+      <div class="overall"><div id="overallBar"></div></div>
+      <div id="notice" class="notice" role="status" hidden></div>
+
+      <ul id="list" class="list"></ul>
+    </section>
+  </main>
+
+  <dialog id="compare">
+    <div class="cmp-head">
+      <span id="cmpTitle"></span>
+      <span class="cmp-legend"><b>לפני</b> ⟵ גרור ⟶ <b>אחרי</b></span>
+      <button id="cmpClose" aria-label="סגירה">✕</button>
+    </div>
+    <div id="cmpStage" class="cmp-stage">
+      <img id="cmpAfter" alt="אחרי">
+      <div id="cmpBeforeWrap" class="cmp-before"><img id="cmpBefore" alt="לפני"></div>
+      <div id="cmpLine" class="cmp-line"></div>
+    </div>
+  </dialog>
+
+  <template id="rowTpl">
+    <li class="row">
+      <img class="thumb" alt="">
+      <div class="info">
+        <div class="name"></div>
+        <div class="dims"></div>
+        <div class="bar"><div></div></div>
+      </div>
+      <div class="status"></div>
+      <div class="actions">
+        <button class="compareBtn" hidden>לפני/אחרי</button>
+        <a class="downloadBtn button" hidden>הורדה</a>
+        <button class="retryBtn" hidden>נסה שוב</button>
+        <button class="removeBtn" aria-label="הסרה">✕</button>
+      </div>
+    </li>
+  </template>
+
+  <script src="vendor/tf.min.js"></script>
+  <script src="vendor/upscaler.min.js"></script>
+  <script src="vendor/esrgan-medium.min.js"></script>
+  <script src="vendor/esrgan-thick.min.js"></script>
+  <script src="vendor/jszip.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
