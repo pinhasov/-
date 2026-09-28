@@ -502,6 +502,21 @@ for (const id of ['scale', 'maxEdge']) $(id).addEventListener('change', () => it
 
 window.addEventListener('beforeunload', (e) => { if (running || items.some((i) => i.status === 'done')) { e.preventDefault(); e.returnValue = ''; } });
 
+/* ================= שיתוף האתר ================= */
+const SITE_URL = 'https://pinhasov.github.io/-/';
+const SHARE_TEXT = 'תנסה את "משדרג תמונות" – מעלים עד 100 תמונות והן משודרגות באיכות גבוהה, בחינם ובלי התקנה:';
+if (!IN_ARTIFACT) {
+  $('shareBox').hidden = false;
+  $('shareWa').href = `https://wa.me/?text=${encodeURIComponent(`${SHARE_TEXT} ${SITE_URL}`)}`;
+  $('shareBtn').addEventListener('click', async () => {
+    if (navigator.share) {
+      try { await navigator.share({ title: 'משדרג תמונות', text: SHARE_TEXT, url: SITE_URL }); return; } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    try { await navigator.clipboard.writeText(`${SHARE_TEXT} ${SITE_URL}`); notify('הקישור הועתק – אפשר להדביק אותו בהודעה לחבר.', 'ok'); }
+    catch { notify(`הקישור לשיתוף: ${SITE_URL}`, 'ok'); }
+  });
+}
+
 loadSettings();
 initEngine().catch((err) => { els.engine.textContent = `שגיאה בטעינת המנוע: ${err.message}`; els.engine.classList.add('warn'); });
 refresh();
