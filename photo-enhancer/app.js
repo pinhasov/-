@@ -2,7 +2,7 @@
 
 /* ================= הגדרות קבועות ================= */
 const MAX_FILES = 100;
-const TILE = 160;          // גודל אריח (פיקסלים בתמונת הקלט)
+const TILE = 256;          // גודל אריח (פיקסלים בתמונת הקלט) – אריח גדול = פחות תקורה
 const TILE_PAD = 16;       // שוליים חופפים סביב כל אריח – מונע תפרים
 const MODELS = {
   fast: { lib: () => window.ESRGANMedium, base: 'models/fast' },
@@ -10,7 +10,7 @@ const MODELS = {
 };
 const SETTINGS_KEY = 'photo-enhancer-settings';
 const DEFAULTS = {
-  quality: 'fast', scale: 'auto', maxEdge: '6000',
+  quality: 'fast', scale: 'auto', maxEdge: '6000', timeBudget: '20',
   levels: true, vibrance: true, sharpen: true, format: 'image/jpeg',
 };
 
@@ -73,6 +73,60 @@ async function initEngine() {
   els.engine.textContent = backend === 'webgl' ? 'מנוע: כרטיס מסך (WebGL) ✓' : 'מנוע: מעבד (איטי) – מומלץ Chrome עם האצת חומרה';
   els.engine.classList.toggle('warn', backend !== 'webgl');
 }
+/* ---------- תקציב זמן לתמונה ----------
+   מודדים כמה מילישניות לוקח למודל לעבד פיקסל קלט במחשב הנוכחי, ולפי זה מקטינים
+   את הקלט למודל כך שהתמונה תסתיים בזמן שנבחר. התוצאה מוגדלת לגודל היעד המלא. */
+const aiRate = new Map();          // מפתח מודל → מילישניות לפיקסל קלט
+let postRate = 0.00015;            // מילישניות לפיקסל פלט (שיפורים + שמירה), מתעדכן אחרי כל תמונה
+const ema = (old, v) => (old == null ? v : old * 0.4 + v * 0.6);
+
+const calibrations = new Map();
+function calibrate(key, upscaler) {
+  if (!calibrations.has(key)) calibrations.set(key, measure(key, upscaler).catch((e) => { calibrations.delete(key); throw e; }));
+  return calibrations.get(key);
+}
+async function measure(key, upscaler) {
+  const run = async (n) => {
+    const t = tf.randomUniform([n, n, 3], 0, 255);
+    const r = await upscaler.execute(t, { output: 'tensor' });
+    await r.data();
+    t.dispose(); r.dispose();
+  };
+  await run(32);                   // חימום – הידור השיידרים בכרטיס המסך
+  const t0 = performance.now();
+  await run(128);
+  if (!aiRate.has(key)) aiRate.set(key, (performance.now() - t0) / (128 * 128));
+}
+
+// מחליט איך לעמוד בזמן בלי לפגוע באיכות:
+//  1. אם יש זמן – AI על הקלט המלא.
+//  2. אם חסר מעט – AI על קלט מוקטן קצת (עד 70% בכל צלע).
+//  3. בהגדלה ×2 – מודל ×4 על חצי מהקלט (רבע מהעבודה, אותו גודל תוצאה).
+//  4. אם גם זה לא מספיק – הגדלה רגילה באיכות גבוהה + שיפורים, בלי AI (לא מקלקלים את התמונה).
+const MIN_FACTOR = 0.7;
+async function planBudget(plan, quality, budgetMs) {
+  const full = { scale: plan.scale, aiW: plan.inW, aiH: plan.inH };
+  if (!budgetMs) return full;
+  const aiBudget = budgetMs * 0.85 - plan.outW * plan.outH * postRate - 800;
+  const tryModel = async (scale, w, h) => {
+    const key = `${quality}-x${scale}`;
+    await calibrate(key, getUpscaler(quality, scale));
+    const allowedPx = aiBudget / aiRate.get(key);
+    const f = Math.min(1, Math.sqrt(allowedPx / (w * h)));
+    if (f < MIN_FACTOR) return null;
+    return { scale, aiW: Math.max(16, Math.round(w * f)), aiH: Math.max(16, Math.round(h * f)) };
+  };
+  if (aiBudget > 0) {
+    const same = await tryModel(plan.scale, plan.inW, plan.inH);
+    if (same) return same;
+    if (plan.scale === 2) {
+      const quad = await tryModel(4, Math.max(16, Math.round(plan.inW / 2)), Math.max(16, Math.round(plan.inH / 2)));
+      if (quad) return quad;
+    }
+  }
+  return { scale: plan.scale, aiW: 0, aiH: 0 }; // ללא AI
+}
+
 function getUpscaler(quality, scale) {
   const key = `${quality}-x${scale}`;
   if (!upscalers.has(key)) {
@@ -154,7 +208,8 @@ function renderRow(item) {
   r.querySelector('.dims').textContent = item.width
     ? `${item.width}×${item.height}  ⟵  ${item.outW ? `${item.outW}×${item.outH}` : `${target.outW}×${target.outH}`}`
     : '';
-  const st = item.status === 'working' ? `בעיבוד ${Math.round(item.progress * 100)}%` : STATUS_TEXT[item.status];
+  let st = item.status === 'working' ? `בעיבוד ${Math.round(item.progress * 100)}%` : STATUS_TEXT[item.status];
+  if (item.status === 'done' && item.seconds) st += ` · ${Math.round(item.seconds)} שנ׳${item.noAI ? ' · ללא AI (המחשב איטי למגבלת הזמן)' : ''}`;
   r.querySelector('.status').textContent = item.error ? `${st}: ${item.error}` : st;
   r.querySelector('.bar > div').style.width = `${Math.round((item.status === 'done' ? 1 : item.progress) * 100)}%`;
   r.querySelector('.compareBtn').hidden = item.status !== 'done';
@@ -232,28 +287,50 @@ function planSize(item, s) {
 }
 
 async function processItem(item, s, signal) {
+  const started = performance.now();
   const plan = planSize(item, s);
-  const upscaler = getUpscaler(s.quality, plan.scale);
+  const budgetMs = Number(s.timeBudget) * 1000;
+  const route = await planBudget(plan, s.quality, budgetMs);
+  const useAI = route.aiW > 0;
+  const aiW = useAI ? route.aiW : plan.outW, aiH = useAI ? route.aiH : plan.outH;
+  const key = `${s.quality}-x${route.scale}`;
 
   // 1. פענוח והתאמת גודל הקלט (כולל סיבוב EXIF), על רקע לבן לתמונות שקופות
   const bmp = await createImageBitmap(item.file);
   const src = document.createElement('canvas');
-  src.width = plan.inW; src.height = plan.inH;
+  src.width = aiW; src.height = aiH;
   const sctx = src.getContext('2d');
   sctx.fillStyle = '#fff';
-  sctx.fillRect(0, 0, plan.inW, plan.inH);
+  sctx.fillRect(0, 0, aiW, aiH);
   sctx.imageSmoothingQuality = 'high';
-  sctx.drawImage(bmp, 0, 0, plan.inW, plan.inH);
+  sctx.drawImage(bmp, 0, 0, aiW, aiH);
   bmp.close();
 
-  // 2. הגדלת AI באריחים
-  const out = document.createElement('canvas');
-  out.width = plan.outW; out.height = plan.outH;
-  const octx = out.getContext('2d');
-  await upscaleTiled(upscaler, src, octx, plan.scale, signal, (p) => {
-    item.progress = p * 0.9; renderRow(item); refresh();
-  });
-  src.width = src.height = 0;
+  // 2. הגדלת AI באריחים (או, בלי AI, הקנבס המוגדל עצמו)
+  let out = src, octx = sctx;
+  if (useAI) {
+    const aiStart = performance.now();
+    out = document.createElement('canvas');
+    out.width = aiW * route.scale; out.height = aiH * route.scale;
+    octx = out.getContext('2d');
+    await upscaleTiled(getUpscaler(s.quality, route.scale), src, octx, route.scale, signal, (p) => {
+      item.progress = p * 0.9; renderRow(item); refresh();
+    });
+    src.width = src.height = 0;
+    aiRate.set(key, ema(aiRate.get(key), (performance.now() - aiStart) / (aiW * aiH)));
+  }
+
+  // אם הקלט הוקטן בגלל מגבלת הזמן – מגדילים את תוצאת ה-AI לגודל היעד המלא
+  const postStart = performance.now();
+  if (out.width !== plan.outW || out.height !== plan.outH) {
+    const full = document.createElement('canvas');
+    full.width = plan.outW; full.height = plan.outH;
+    const fctx = full.getContext('2d');
+    fctx.imageSmoothingQuality = 'high';
+    fctx.drawImage(out, 0, 0, plan.outW, plan.outH);
+    out.width = out.height = 0;
+    out = full; octx = fctx;
+  }
 
   // 3. שיפורים
   if (s.levels || s.vibrance || s.sharpen) {
@@ -270,11 +347,14 @@ async function processItem(item, s, signal) {
   const q = s.format === 'image/png' ? undefined : 0.95;
   const blob = await new Promise((res, rej) => out.toBlob((b) => (b ? res(b) : rej(new Error('שמירת התמונה נכשלה – ייתכן שהיא גדולה מדי'))), s.format, q));
   out.width = out.height = 0;
+  postRate = ema(postRate, (performance.now() - postStart) / (plan.outW * plan.outH));
   if (item.url) URL.revokeObjectURL(item.url);
   item.blob = blob;
   item.format = s.format;
   item.url = URL.createObjectURL(blob);
   item.outW = plan.outW; item.outH = plan.outH;
+  item.seconds = (performance.now() - started) / 1000;
+  item.noAI = !useAI;
   item.progress = 1;
 }
 
@@ -517,6 +597,17 @@ if (!IN_ARTIFACT) {
   });
 }
 
+// טעינת המודל ומדידת מהירות המחשב מראש, כדי שגם התמונה הראשונה תעמוד בזמן
+function prewarm() {
+  const s = readSettings();
+  if (running || !Number(s.timeBudget)) return;
+  const scales = s.scale === 'auto' ? [2, 4] : [Number(s.scale)];
+  (async () => {
+    for (const sc of scales) { if (running) return; await calibrate(`${s.quality}-x${sc}`, getUpscaler(s.quality, sc)).catch(() => {}); }
+  })();
+}
+for (const id of ['quality', 'scale', 'timeBudget']) $(id).addEventListener('change', prewarm);
+
 loadSettings();
-initEngine().catch((err) => { els.engine.textContent = `שגיאה בטעינת המנוע: ${err.message}`; els.engine.classList.add('warn'); });
+initEngine().then(prewarm, (err) => { els.engine.textContent = `שגיאה בטעינת המנוע: ${err.message}`; els.engine.classList.add('warn'); });
 refresh();
