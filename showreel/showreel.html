@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>מרעיון לתנועה ברגע</title>
+<style>
+  @font-face {
+    font-family: 'NSH';
+    src: url('fonts/NotoSansHebrew-VF-hebrew.woff2') format('woff2');
+    font-weight: 100 900;
+    font-stretch: 62.5% 100%;
+    font-display: block;
+  }
+  @font-face {
+    font-family: 'JBM';
+    src: url('fonts/JetBrainsMono-VF-latin.woff2') format('woff2');
+    font-weight: 400 800;
+    font-display: block;
+  }
+  html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: #0B0B0B; }
+  #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; }
+  #bg { position: absolute; inset: 0; }
+  #bar { position: absolute; left: -300px; width: 1680px; }
+  #cam { position: absolute; inset: 0; }
+  #grp { position: absolute; inset: 0; }
+  .row {
+    position: absolute; top: 0; left: 0;
+    display: flex; flex-direction: row; direction: rtl; align-items: baseline;
+    white-space: nowrap; font-family: 'NSH'; font-weight: 900;
+    font-kerning: normal;
+  }
+  .w { display: inline-block; }
+  .w .l { letter-spacing: 0 !important; }
+  .dot { display: inline-block; border-radius: 50%; }
+  #sel { position: absolute; left: 0; top: 0; pointer-events: none; }
+  #sel .edge { position: absolute; inset: 0; box-sizing: border-box; border-style: solid; }
+  .h { position: absolute; box-sizing: border-box; border-style: solid; }
+  .mono { font-family: 'JBM'; font-weight: 700; direction: ltr; white-space: nowrap; letter-spacing: 0.04em; }
+  #sellabel { position: absolute; left: 0; bottom: 100%; font-size: 26px; line-height: 1; padding: 9px 12px 8px; margin-bottom: 18px; }
+  #rect { position: absolute; left: 0; top: 0; overflow: visible; }
+  #endlabel { position: absolute; font-size: 30px; line-height: 1; }
+  #hud { position: absolute; inset: 0; pointer-events: none; }
+  #hud .mono { position: absolute; font-size: 22px; line-height: 1; font-weight: 500; }
+  svg.defs { position: absolute; width: 0; height: 0; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bg"></div>
+  <div id="bar"></div>
+  <div id="cam">
+    <div id="grp">
+      <div class="row" id="row"></div>
+      <div id="sel">
+        <div class="edge"></div>
+        <div id="sellabel" class="mono"></div>
+      </div>
+    </div>
+    <div id="stack"></div>
+    <svg id="rect" width="1080" height="1920"><path id="rectpath" fill="none"/></svg>
+    <div id="endhandles"></div>
+    <div id="endlabel" class="mono"></div>
+  </div>
+  <div id="hud">
+    <div class="mono" id="tc" style="left:80px; top:262px"></div>
+    <div class="mono" id="tag" style="right:80px; top:262px">REEL 2026</div>
+  </div>
+</div>
+<svg class="defs"><filter id="mb" x="-60%" y="-20%" width="220%" height="140%" color-interpolation-filters="sRGB">
+  <feGaussianBlur id="mbg" stdDeviation="0 0"/></filter></svg>
+
+<script>
+'use strict';
+// ───────────────────────── constants ─────────────────────────
+const W = 1080, H = 1920, GRID = 0.5, DUR = 12;
+const CHECK = new URLSearchParams(location.search).has('check');
+const C = { black: '#0B0B0B', orange: '#FF5A1F', purple: '#7B2CFF', lime: '#C6FF3D', cream: '#F4EBDD' };
+const INK = { black: C.cream, orange: C.black, purple: C.cream, lime: C.black, cream: C.black };
+const UI  = { black: C.lime,  orange: C.black, purple: C.lime,  lime: C.black, cream: C.black };
+// Safe area for reels, and the composition centre inside it (80..940 is safe at every height).
+const SAFE = { top: 250, bottom: 1920 - 350, left: 80, right: 1080 - 80, rightLow: 1080 - 140 };
+const CX = 510, CY = 880;
+const WORDS = ['מרעיון', 'לתנועה', 'ברגע'];
+// Background per grid (24 grids). Grid 0 is the light-bar intro.
+const BG = ['black', 'orange', 'purple', 'lime', 'orange', 'purple', 'lime',
+            'black', 'orange', 'purple', 'black',
+            'lime', 'black', 'lime',
+            'cream', 'cream', 'cream', 'cream', 'cream', 'cream', 'cream', 'cream', 'cream', 'cream'];
+// Check-mode colours: one pure channel per word so the pixel test can separate them.
+const CHK = ['#FF0000', '#00FF00', '#0000FF'];
+const CHK_DOT = '#FF0000';
+
+// ───────────────────────── math ─────────────────────────
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const smooth = k => { k = clamp(k); return k * k * (3 - 2 * k); };
+const easeOut = k => 1 - Math.pow(1 - clamp(k), 3);
+// Closed-form step response of a damped spring (0 → 1).
+function step(t, f, z) {
+  if (t <= 0) return 0;
+  const w = 2 * Math.PI * f;
+  if (z < 1) {
+    const wd = w * Math.sqrt(1 - z * z);
+    return 1 - Math.exp(-z * w * t) * (Math.cos(wd * t) + (z * w / wd) * Math.sin(wd * t));
+  }
+  return 1 - Math.exp(-w * t) * (1 + w * t);
+}
+// A value that changes target several times = sum of one spring per change.
+function spring(t, v0, events, f = 4, z = 0.5) {
+  let v = v0, prev = v0;
+  for (const [te, target] of events) { v += (target - prev) * step(t - te, f, z); prev = target; }
+  return v;
+}
+const fadeIn = (t, t0, d = 0.07) => smooth((t - t0) / d);
+
+// ───────────────────────── measurement ─────────────────────────
+const cv = document.createElement('canvas');
+const ctx = cv.getContext('2d');
+const STRETCH = { 62.5: 'extra-condensed', 100: 'normal' };
+// Ink metrics at font-size 100 for a word in a given state (wdth endpoint, letter-spacing in em).
+function measure(text, wdth, lsEm) {
+  ctx.font = "900 100px 'NSH'";
+  ctx.fontStretch = STRETCH[wdth];
+  ctx.letterSpacing = (lsEm * 100) + 'px';
+  ctx.direction = 'rtl'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  const m = ctx.measureText(text);
+  return {
+    inkW: m.actualBoundingBoxLeft + m.actualBoundingBoxRight,
+    asc: m.actualBoundingBoxAscent, desc: m.actualBoundingBoxDescent,
+    adv: m.width - lsEm * 100,                 // DOM adds no spacing after the last letter
+    fa: m.fontBoundingBoxAscent, fd: m.fontBoundingBoxDescent,
+  };
+}
+// Size that makes the ink `targetW` wide, capped by ink height.
+function fit(text, wdth, lsEm, targetW, maxH = 520) {
+  const m = measure(text, wdth, lsEm);
+  return Math.min(targetW / m.inkW * 100, maxH / (m.asc + m.desc) * 100);
+}
+
+// ───────────────────────── DOM ─────────────────────────
+const $ = id => document.getElementById(id);
+const bg = $('bg'), bar = $('bar'), cam = $('cam'), grp = $('grp'), row = $('row'), sel = $('sel');
+const selEdge = sel.querySelector('.edge'), selLabel = $('sellabel');
+const stack = $('stack'), rectPath = $('rectpath'), endHandles = $('endhandles'), endLabel = $('endlabel');
+const mbg = $('mbg'), tc = $('tc'), tag = $('tag'), hud = $('hud');
+
+function makeWord(text) {
+  const w = document.createElement('span'); w.className = 'w';
+  const b = document.createElement('span'); b.className = 'b'; b.textContent = text.slice(0, -1);
+  const l = document.createElement('span'); l.className = 'l'; l.textContent = text.slice(-1);
+  w.append(b, l); w._b = b;
+  return w;
+}
+function makeDot() { const d = document.createElement('span'); d.className = 'dot'; return d; }
+function makeHandles(parent) {
+  const hs = [];
+  for (let i = 0; i < 8; i++) { const h = document.createElement('div'); h.className = 'h'; parent.appendChild(h); hs.push(h); }
+  return hs;
+}
+const rowWords = WORDS.map(makeWord); rowWords.forEach(w => row.appendChild(w));
+const rowDot = makeDot(); row.appendChild(rowDot);
+const selHandles = makeHandles(sel);
+const stackRows = WORDS.map((t, i) => {
+  const r = document.createElement('div'); r.className = 'row';
+  const w = makeWord(t); r.appendChild(w); r._w = w;
+  if (i === WORDS.length - 1) { r._dot = makeDot(); r.appendChild(r._dot); }
+  stack.appendChild(r); return r;
+});
+const endHs = makeHandles(endHandles);
+
+// ───────────────────────── layout (computed once from measurements) ─────────────────────────
+const L = {};
+function layout() {
+  const LS_WIDE = 0.10, LS = 0.03, LS_C = 0;
+  L.LS_WIDE = LS_WIDE; L.LS = LS;
+  // Single-word states.
+  L.slam = { w: 0, wdth: 100, ls: LS, size: fit(WORDS[0], 100, LS, 680) };
+  L.cond = WORDS.map((t, i) => ({ w: i, wdth: 62.5, ls: LS_C, size: fit(t, 62.5, LS_C, 800, 560) }));
+  L.expand = { w: 1, wdth: 100, ls: LS_WIDE, size: fit(WORDS[1], 100, LS_WIDE, 800) };
+  L.slide = { w: 2, wdth: 100, ls: LS, size: fit(WORDS[2], 100, LS, 800, 520) };
+  L.sel = { w: 1, wdth: 100, ls: LS, size: fit(WORDS[1], 100, LS, 700) };
+
+  // Joined line: words + gaps + dot fill 800 px of advance at the wide state.
+  const GAP = 0.30, DOT = 0.24, DOTGAP = 0.10;
+  const advSum = WORDS.reduce((s, t) => s + measure(t, 100, LS).adv, 0) / 100;
+  const lineEm = advSum + 2 * GAP + DOTGAP + DOT;
+  L.join = { size: 800 / lineEm, GAP, DOT, DOTGAP };
+  L.join.m = WORDS.map(t => measure(t, 100, LS));
+
+  // End stack: same size for all three lines, the widest line is 660 px of ink.
+  const em = WORDS.map((t, i) => {
+    const m = measure(t, 100, LS);
+    return i === WORDS.length - 1 ? m.inkW / 100 + DOTGAP + DOT : m.inkW / 100;
+  });
+  const S = 660 / Math.max(...em);
+  const ms = WORDS.map(t => measure(t, 100, LS));
+  const LGAP = 0.16 * S;
+  const base = [0];
+  for (let i = 1; i < 3; i++) base.push(base[i - 1] + (ms[i - 1].desc + ms[i].asc) / 100 * S + LGAP);
+  const inkTop = -ms[0].asc / 100 * S, inkBot = base[2] + ms[2].desc / 100 * S;
+  const off = CY - (inkTop + inkBot) / 2;
+  L.stack = { size: S, base: base.map(b => b + off), inkTop: inkTop + off, inkBot: inkBot + off,
+              inkW: Math.max(...em) * S, m: ms, DOT, DOTGAP };
+}
+
+// Place a flex row so that its baseline sits at `baseY` and its box is centred on `cx`.
+function placeRow(el, size, baseY, cx = CX) {
+  const m = measure(WORDS[0], 100, 0);       // font metrics are word-independent
+  const fa = m.fa / 100 * size, fd = m.fd / 100 * size;
+  el.style.fontSize = size + 'px';
+  el.style.lineHeight = (fa + fd) + 'px';
+  el.style.transform = `translate(${cx}px, ${baseY - fa}px) translateX(-50%)`;
+  return { fa, fd };
+}
+function styleWord(w, size, wdth, lsEm, color) {
+  w.style.fontStretch = wdth + '%';
+  w._b.style.letterSpacing = (lsEm * size) + 'px';
+  w.style.color = color;
+}
+
+// ───────────────────────── camera ─────────────────────────
+// Hits: [time, amplitude px]. Each one adds a short decaying shake.
+const HITS = [[0.57, 14], [1.0, 6], [1.62, 9], [2.0, 6], [2.66, 13], [3.0, 6], [3.58, 10], [4.0, 5], [4.5, 5],
+              [5.04, 12], [5.5, 7], [6.08, 12], [6.5, 6], [7.05, 12], [7.52, 3], [8.62, 4], [8.98, 6], [9.02, 3],
+              [9.55, 3], [10.02, 4], [10.52, 3], [11.05, 4], [11.52, 4]];
+const ROT = [0, 0.8, -0.9, 0.6, -1.1, 1.0, -0.7, 0.9, -0.6, 0.7, -1.0, 0.8, -0.8, 1.0,
+             0.4, -0.3, 0.35, -0.4, 0.3, -0.35, 0.4, -0.3, 0.35, -0.2];
+function camera(t) {
+  let sx = 0, sy = 0;
+  for (const [th, a] of HITS) {
+    const d = t - th; if (d < 0 || d > 0.35) continue;
+    const env = a * Math.exp(-d / 0.065);
+    sx += env * Math.sin(2 * Math.PI * 23 * d);
+    sy += env * 0.7 * Math.cos(2 * Math.PI * 17 * d + 0.6);
+  }
+  const rot = spring(t, 0, ROT.map((r, g) => [g * GRID, r]), 2.2, 0.7);
+  const g = Math.floor(t / GRID), lt = t - g * GRID;
+  // Push: every shot pushes in; the end frame keeps one long push.
+  const s = g >= 14 ? 1 + 0.06 * easeOut((t - 7) / 5) * 0.9 + 0.006 * ((t - 7) / 5)
+                    : 1 + 0.024 * (lt / GRID) + 0.004;
+  return { sx, sy, rot, s };
+}
+
+// ───────────────────────── seek(t): every style is a function of t ─────────────────────────
+function hideAll() {
+  row.style.display = 'none'; sel.style.display = 'none'; stack.style.display = 'none';
+  rectPath.style.display = 'none'; endHandles.style.display = 'none'; endLabel.style.display = 'none';
+  bar.style.display = 'none';
+  rowWords.forEach(w => { w.style.display = 'none'; w.style.transform = ''; w.style.opacity = 1; w.style.filter = ''; });
+  rowDot.style.display = 'none';
+}
+// Entry common to every word: whole word, short move up, opacity 0 → 1.
+function entry(t, t0, rise = 34) {
+  return { o: fadeIn(t, t0), y: spring(t, rise, [[t0, 0]], 5, 0.8) };
+}
+function wordColor(i, key) { return CHECK ? CHK[i] : INK[key]; }
+
+function seek(t) {
+  t = clamp(t, 0, DUR - 1e-6);
+  const g = Math.floor(t / GRID), lt = t - g * GRID, T0 = g * GRID;
+  const key = BG[g];
+  hideAll();
+  bg.style.background = CHECK ? '#000' : C[key];
+  const cm = camera(t);
+  cam.style.transformOrigin = `${CX}px ${CY}px`;
+  cam.style.transform = `translate(${cm.sx}px, ${cm.sy}px) rotate(${cm.rot}deg) scale(${cm.s})`;
+  grp.style.transformOrigin = `${CX}px ${CY}px`;
+  grp.style.transform = '';
+
+  // HUD
+  hud.style.display = CHECK ? 'none' : '';
+  const fr = Math.floor(t * 60);
+  tc.textContent = `00:00:${String(Math.floor(t)).padStart(2, '0')}:${String(fr % 60).padStart(2, '0')}`;
+  const hudCol = g === 0 ? C.cream : INK[key];
+  tc.style.color = tag.style.color = hudCol;
+  tc.style.opacity = tag.style.opacity = g === 0 ? 0.55 * smooth(t / 0.2) : 0.72;
+
+  if (g === 0) return intro(t);
+  if (g <= 6) return words(t, g, lt, T0, key);
+  if (g <= 10) return selection(t, g, T0, key);
+  if (g <= 13) return join(t, g, T0, key);
+  return ending(t, g, T0);
+}
+
+// Grid 0: a thin bar crosses the black frame, then opens into full orange.
+function intro(t) {
+  if (CHECK) return;
+  bar.style.display = '';
+  const cross = easeOut((t - 0.04) / 0.2);          // bar grows across
+  const open = smooth((t - 0.28) / 0.2);             // bar opens to full screen
+  const h = lerp(6, H + 40, open * open);
+  const cy = 960;
+  bar.style.top = (cy - h / 2) + 'px';
+  bar.style.height = h + 'px';
+  bar.style.background = C.orange;
+  bar.style.transformOrigin = '100% 50%';
+  bar.style.transform = `scaleX(${cross})`;
+  bar.style.boxShadow = open < 0.05 ? `0 0 ${18 + 30 * cross}px ${2 + 6 * cross}px rgba(255,90,31,${0.55 * cross})` : 'none';
+}
+
+function showSingle(st, color, extra) {
+  const w = rowWords[st.w];
+  row.style.display = 'flex';
+  row.style.gap = '0px';
+  w.style.display = 'inline-block';
+  const m = measure(WORDS[st.w], st.wdth, st.ls);
+  const baseY = CY - (m.desc - m.asc) / 2 / 100 * st.size;
+  const { fa } = placeRow(row, st.size, baseY);
+  styleWord(w, st.size, extra.wdth ?? st.wdth, extra.ls ?? st.ls, color);
+  w.style.transformOrigin = `50% ${fa - (m.asc - m.desc) / 2 / 100 * st.size}px`;
+  return w;
+}
+
+function words(t, g, lt, T0, key) {
+  const col = i => wordColor(i, key);
+  if (g === 1) {                                     // מרעיון slams in
+    const st = L.slam, w = showSingle(st, col(0), {});
+    const e = entry(t, T0, 20);
+    const s = spring(t, 1.25, [[T0, 1]], 3.4, 0.42);
+    w.style.opacity = e.o;
+    w.style.transform = `translateY(${e.y}px) scale(${s})`;
+  } else if (g === 3) {                              // לתנועה expands condensed → wide
+    const st = L.expand;
+    const k = spring(t, 0, [[T0 + 0.03, 1]], 2.6, 0.62);
+    const w = showSingle(st, col(1), { wdth: lerp(62.5, 100, k), ls: lerp(0, st.ls, Math.max(0, k)) });
+    const e = entry(t, T0);
+    w.style.opacity = e.o;
+    w.style.transform = `translateY(${e.y}px)`;
+  } else if (g === 5) {                              // ברגע slides in from the right with motion blur
+    const st = L.slide, w = showSingle(st, col(2), {});
+    const X = tt => spring(tt, 1150, [[T0, 0]], 3.0, 0.78);
+    const x = X(t), v = (X(t + 0.0005) - X(t - 0.0005)) / 0.001;
+    const e = entry(t, T0, 26);
+    w.style.opacity = fadeIn(t, T0, 0.05);
+    w.style.transform = `translate(${x}px, ${e.y}px)`;
+    const sd = Math.min(46, Math.abs(v) / 900);
+    if (!CHECK && sd > 0.4) { mbg.setAttribute('stdDeviation', `${sd.toFixed(2)} 0`); w.style.filter = 'url(#mb)'; }
+  } else {                                           // second grid: condensed version on a new colour
+    const i = (g - 2) / 2, st = L.cond[i], w = showSingle(st, col(i), {});
+    const e = entry(t, T0, 40);
+    w.style.opacity = e.o;
+    w.style.transform = `translateY(${e.y}px)`;
+  }
+}
+
+// Grids 7–10: selection frame snaps to לתנועה, rotates, returns to 0 and locks.
+function selection(t, g, T0, key) {
+  const st = L.sel, w = showSingle(st, wordColor(1, key), {});
+  const e = entry(t, 3.5);
+  w.style.opacity = e.o;
+  w.style.transform = `translateY(${e.y}px)`;
+  const rot = spring(t, 0, [[4.02, -5], [4.52, 0]], 3.0, 0.55);
+  grp.style.transform = `rotate(${rot}deg)`;
+  if (CHECK) return;
+
+  const m = measure(WORDS[1], st.wdth, st.ls);
+  const iw = m.inkW / 100 * st.size, ih = (m.asc + m.desc) / 100 * st.size;
+  const pad = 24, fw = iw + pad * 2, fh = ih + pad * 2;
+  const col = UI[key];
+  const locked = g === 10;
+  const snap = spring(t, 1.2, [[3.55, 1]], 4.2, 0.5) + (locked ? 0.035 * (1 - step(t - 5.0, 6, 0.4)) * (t >= 5 ? 1 : 0) : 0);
+  sel.style.display = '';
+  sel.style.width = fw + 'px'; sel.style.height = fh + 'px';
+  sel.style.transformOrigin = '50% 50%';
+  sel.style.transform = `translate(${CX - fw / 2}px, ${CY - fh / 2}px) scale(${snap})`;
+  sel.style.opacity = fadeIn(t, 3.53, 0.05);
+  selEdge.style.borderWidth = '3px'; selEdge.style.borderColor = col;
+  const hs = 18;
+  const pts = [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.5, 1], [0, 1], [0, 0.5]];
+  selHandles.forEach((h, i) => {
+    h.style.width = h.style.height = hs + 'px';
+    h.style.left = (pts[i][0] * fw - hs / 2) + 'px';
+    h.style.top = (pts[i][1] * fh - hs / 2) + 'px';
+    h.style.borderWidth = '3px'; h.style.borderColor = col;
+    h.style.background = locked ? col : C[key];
+  });
+  selLabel.style.background = col;
+  selLabel.style.color = C[key];
+  selLabel.textContent = locked ? '■ LOCKED' : `W ${Math.round(iw)} × H ${Math.round(ih)}`;
+  selLabel.style.transform = `translateY(${locked ? spring(t, 10, [[5.0, 0]], 6, 0.5) : 0}px)`;
+}
+
+// Grids 11–13: the three words join one line, the dot lands, the line opens to full width.
+function join(t, g, T0, key) {
+  const J = L.join, S = J.size;
+  const k = g < 13 ? 0 : spring(t, 0, [[6.53, 1]], 2.6, 0.7);
+  const wdth = lerp(62.5, 100, k), ls = lerp(0, L.LS, Math.max(0, k));
+  row.style.display = 'flex';
+  row.style.gap = (J.GAP * S) + 'px';
+  const asc = Math.max(...J.m.map(m => m.asc)), desc = Math.max(...J.m.map(m => m.desc));
+  const baseY = CY - (desc - asc) / 2 / 100 * S;
+  const { fa } = placeRow(row, S, baseY);
+  rowWords.forEach((w, i) => {
+    w.style.display = 'inline-block';
+    styleWord(w, S, wdth, ls, wordColor(i, key));
+    const e = entry(t, 5.5 + i * 0.05, 60);
+    w.style.opacity = e.o;
+    w.style.transform = `translateY(${e.y}px)`;
+  });
+  if (g >= 12) {
+    const d = J.DOT * S;
+    rowDot.style.display = 'inline-block';
+    rowDot.style.width = rowDot.style.height = d + 'px';
+    rowDot.style.marginRight = ((J.DOTGAP - J.GAP) * S) + 'px';
+    rowDot.style.background = CHECK ? CHK_DOT : C.orange;
+    const s = spring(t, 1.25, [[6.0, 1]], 4.2, 0.45);
+    const y = spring(t, -0.9 * S, [[6.0, 0]], 4.6, 0.5);
+    rowDot.style.transformOrigin = '50% 50%';
+    rowDot.style.transform = `translateY(${y}px) scale(${s})`;
+    rowDot.style.opacity = fadeIn(t, 6.0, 0.04);
+  }
+}
+
+// Grids 14–23: the whole message centred on cream; one small event per grid.
+const PULSES = [7.5, 9.0, 10.5, 11.5];
+function ending(t, g, T0) {
+  const K = L.stack, S = K.size;
+  stack.style.display = '';
+  stackRows.forEach((r, i) => {
+    r.style.display = 'flex';
+    placeRow(r, S, K.base[i]);
+    styleWord(r._w, S, 100, L.LS, wordColor(i, 'cream'));
+    const e = entry(t, 7.0 + i * 0.06, 46);
+    r._w.style.opacity = e.o;
+    r._w.style.transform = `translateY(${e.y}px)`;
+    if (r._dot) {
+      const d = K.DOT * S, dot = r._dot;
+      dot.style.width = dot.style.height = d + 'px';
+      dot.style.marginRight = (K.DOTGAP * S) + 'px';
+      dot.style.background = CHECK ? CHK_DOT : C.orange;
+      // Each pulse is two target changes (up, then back), i.e. two springs.
+      let pulse = 0;
+      for (const p of PULSES) pulse += 0.32 * (step(t - p, 6, 0.45) - step(t - p - 0.07, 6, 0.45));
+      const base = spring(t, 0, [[7.12, 1]], 4, 0.5);
+      dot.style.transformOrigin = '50% 50%';
+      dot.style.transform = `translateY(${e.y}px) scale(${base + pulse})`;
+      dot.style.opacity = e.o;
+    }
+  });
+  if (CHECK) return;
+
+  // Rectangle that draws around the message and closes (grids 16–17).
+  const pad = 52;
+  const x0 = CX - K.inkW / 2 - pad, x1 = CX + K.inkW / 2 + pad;
+  const y0 = K.inkTop - pad, y1 = K.inkBot + pad;
+  const per = 2 * (x1 - x0) + 2 * (y1 - y0);
+  const drawn = 0.5 * easeOut((t - 8.0) / 0.42) + 0.5 * easeOut((t - 8.5) / 0.4);
+  if (drawn > 0) {
+    rectPath.style.display = '';
+    // start at top-right (RTL reading start) and run counter-clockwise
+    rectPath.setAttribute('d', `M${x1},${y0} L${x0},${y0} L${x0},${y1} L${x1},${y1} Z`);
+    rectPath.setAttribute('stroke', C.black);
+    rectPath.setAttribute('stroke-width', 4);
+    rectPath.setAttribute('stroke-dasharray', `${per} ${per}`);
+    rectPath.setAttribute('stroke-dashoffset', per * (1 - drawn));
+  }
+  // Handles flash at grid 20 and stay.
+  if (t >= 10.0) {
+    endHandles.style.display = '';
+    const hs = 20, fw = x1 - x0, fh = y1 - y0;
+    const pts = [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.5, 1], [0, 1], [0, 0.5]];
+    const flash = 1 - smooth((t - 10.0) / 0.25);
+    const sc = spring(t, 0, [[10.0, 1]], 5, 0.45);
+    endHs.forEach((h, i) => {
+      h.style.width = h.style.height = hs + 'px';
+      h.style.left = (x0 + pts[i][0] * fw - hs / 2) + 'px';
+      h.style.top = (y0 + pts[i][1] * fh - hs / 2) + 'px';
+      h.style.borderWidth = '4px'; h.style.borderColor = C.black;
+      h.style.background = flash > 0.5 ? C.orange : C.cream;
+      h.style.transform = `scale(${sc})`;
+    });
+  }
+  // Mono label below the rectangle: SHOWREEL 2026 (grid 19), then LOCKED (grid 22).
+  if (t >= 9.5) {
+    endLabel.style.display = '';
+    const locked = t >= 11.0;
+    const e = entry(t, locked ? 11.0 : 9.5, 18);
+    endLabel.textContent = locked ? '■ LOCKED' : 'SHOWREEL 2026';
+    endLabel.style.color = C.black;
+    endLabel.style.left = x0 + 'px';
+    endLabel.style.top = (y1 + 28) + 'px';
+    endLabel.style.opacity = e.o;
+    endLabel.style.transform = `translateY(${e.y}px)`;
+  }
+}
+
+// ───────────────────────── boot ─────────────────────────
+window.seek = seek;
+window.__ready = (async () => {
+  await Promise.all([
+    document.fonts.load("900 100px 'NSH'", 'מרעיון לתנועה ברגע'),
+    document.fonts.load("900 extra-condensed 100px 'NSH'", 'מרעיון לתנועה ברגע'),
+    document.fonts.load("700 30px 'JBM'", 'SHOWREEL 2026 LOCKED W×H 0123456789:■'),
+    document.fonts.load("500 22px 'JBM'", 'REEL 0123456789:'),
+  ]);
+  await document.fonts.ready;
+  const ok = document.fonts.check("900 100px 'NSH'", 'מ') && document.fonts.check("700 30px 'JBM'", 'L');
+  const wide = measure('לתנועה', 100, 0).inkW, cond = measure('לתנועה', 62.5, 0).inkW;
+  layout();
+  seek(0);
+  window.__diag = { ok, wide, cond, ratio: cond / wide, L };
+  if (!ok || cond / wide > 0.95) throw new Error('fonts not loaded or wdth axis missing');
+  return window.__diag;
+})();
+</script>
+</body>
+</html>
